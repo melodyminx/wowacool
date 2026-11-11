@@ -1,0 +1,30 @@
+{
+  "name": "wowacool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "wowacool：小红书图文工作台一期。选题 → 文案 + 出图占位 → 人工审核 → 导出可发布素材包。文案只用 OpenRouter 免费文本模型，出图默认 mock，发布前必须人工审核。",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "wrangler types --strict-vars false && tsc -p tsconfig.json",
+    "test": "tsx --test tests/*.test.ts",
+    "cli": "tsx src/cli.ts",
+    "catalog": "tsx src/cli.ts catalog refresh",
+    "quota": "tsx src/cli.ts quota",
+    "run": "tsx src/cli.ts run",
+    "deploy": "wrangler deploy",
+    "deploy:check": "wrangler deploy --dry-run",
+    "cf-typegen": "wrangler types --strict-vars false"
+  },
+  "bin": {
+    "wowacool": "./dist/src/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.160.0"
+  }
+}
