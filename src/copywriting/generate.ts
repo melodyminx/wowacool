@@ -1,7 +1,8 @@
-import { DEFAULT_IMAGE_COUNT, IMAGES_MAX, IMAGES_MIN } from "../constants.js";
+import { DEFAULT_IMAGE_COUNT, IMAGES_MAX, IMAGES_MIN, TITLE_MAX } from "../constants.js";
 import type { CopyDraft, FreeModel, ModelRoute, QuotaSnapshot } from "../types.js";
 import type { OpenRouterClient } from "../openrouter/client.js";
 import { normalizeCopy, validateCopy } from "./validate.js";
+import { truncateChars } from "../util/text.js";
 
 const SYSTEM_PROMPT = `你是小红书图文笔记文案助手。只输出一个 JSON 对象，不要输出 Markdown 代码围栏，不要输出解释。
 字段：
@@ -32,18 +33,19 @@ export function parseCopyResponse(raw: string, fallbackTopic: string, imageCount
   const content =
     pickString(parsed.content) ||
     stripToPlain(raw) ||
-    `${fallbackTopic}的实用小技巧，收藏备用。`;
+    `${topicSubject(fallbackTopic)}的实用小技巧，收藏备用。`;
   const tags = Array.isArray(parsed.tags) ? parsed.tags.map(String) : pickString(parsed.tags);
   const prompts = Array.isArray(parsed.imagePrompts)
     ? parsed.imagePrompts.map(String)
     : Array.isArray(parsed.image_prompts)
       ? parsed.image_prompts.map(String)
       : [];
+  const subject = topicSubject(fallbackTopic);
   const draft = normalizeCopy({
     title,
     content,
-    tags,
-    imagePrompts: ensureImagePrompts(prompts, fallbackTopic, imageCount),
+    tags: ensureTagCount(typeof tags === "string" ? tags : Array.isArray(tags) ? tags.join(",") : "", subject),
+    imagePrompts: ensureImagePrompts(prompts, subject, imageCount),
   });
   const issues = validateCopy(draft);
   if (issues.some((i) => i.field === "title" && i.message.includes("不能为空"))) {
@@ -89,16 +91,17 @@ export function resolveImageCount(count: number | undefined, fallback = DEFAULT_
 }
 
 export function buildImagePrompts(topic: string, count: number, existing: string[] = []): string[] {
-  return ensureImagePrompts(existing, topic, clampImageCount(count));
+  return ensureImagePrompts(existing, topicSubject(topic), clampImageCount(count));
 }
 
 export function fixtureCopy(topic: string, imageCount = DEFAULT_IMAGE_COUNT): CopyDraft {
   const count = clampImageCount(imageCount);
-  const prompts = ensureImagePrompts([], topic, count);
+  const subject = topicSubject(topic);
+  const prompts = ensureImagePrompts([], subject, count);
   return normalizeCopy({
     title: fallbackTitle(topic),
     content: [
-      `${topic}其实不必大动干戈，先从看得见的一处开始。`,
+      `${subject}其实不必大动干戈，先从看得见的一处开始。`,
       "第一步：把每天都用的东西留在伸手可及的位置，其余先收进盒子。",
       "第二步：同类物品放一起，贴上简单标签，下次找东西会快很多。",
       "第三步：每周花五分钟做一次复位，桌面就不会再堆成小山。",
@@ -107,6 +110,24 @@ export function fixtureCopy(topic: string, imageCount = DEFAULT_IMAGE_COUNT): Co
     tags: ["桌面整理", "收纳", "生活小技巧", "效率"],
     imagePrompts: prompts,
   });
+}
+
+/** 生成结果收成 3–6 个话题。人手改过的话题不走这里。 */
+export function ensureTagCount(tags: string, topic: string): string {
+  const list = tags
+    .split(/[,，]/)
+    .map((tag) => tag.replace(/^[#＃]+/, "").trim())
+    .filter(Boolean);
+  const unique: string[] = [];
+  for (const tag of list) {
+    if (!unique.includes(tag)) unique.push(tag);
+  }
+  const topicTag = truncateChars(topic.replace(/\s+/g, ""), 12);
+  for (const extra of [topicTag, "生活记录", "实用分享", "经验笔记"]) {
+    if (unique.length >= 3) break;
+    if (extra && !unique.includes(extra)) unique.push(extra);
+  }
+  return unique.slice(0, 6).join(",");
 }
 
 function clampImageCount(n: number): number {
@@ -137,9 +158,13 @@ function pickString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function topicSubject(topic: string): string {
+  const head = topic.split(/。角度：|。钩子：/)[0] || topic;
+  return head.replace(/\s+/g, "");
+}
+
 function fallbackTitle(topic: string): string {
-  const base = topic.replace(/\s+/g, "");
-  return base.length <= 20 ? base : Array.from(base).slice(0, 20).join("");
+  return Array.from(topicSubject(topic)).slice(0, TITLE_MAX).join("");
 }
 
 function stripToPlain(raw: string): string {

@@ -26,6 +26,7 @@ function testConfig(): AppConfig {
     },
     preferredModel: "liquid/lfm-3-1.7b:free",
     imageProvider: "mock",
+    workersAiModel: "@cf/black-forest-labs/flux-2-klein-4b",
   };
 }
 

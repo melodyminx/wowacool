@@ -3,19 +3,20 @@
 ## 角色
 
 - **自动视频工作流**：总管。负责选题、审核对接、向用户汇报。本期本仓库不实现总管侧调度。
-- **本仓库（杂活执行通道）**：按选题生成标题 / 正文 / 话题，走占位或未来低成本文生图，强制人工审核后导出可发布素材包。
+- **本仓库（杂活执行通道）**：推荐选题，生成标题 / 正文 / 话题，用 Workers AI 出竖图，强制人工审核后导出可发布素材包。
 
 一期只做小红书图文，不做视频、抖音、视频号。
 
 ## 本地主路径
 
 ```
-选题
-  → OpenRouter 免费文本模型生成文案（标题 ≤20 字，正文 ≤1000 字，话题英文逗号分割）
-  → 文生图 Provider（默认 mock 占位图，1–18 张）
+领域 / 受众 / 关键词或粗略想法
+  → OpenRouter 免费文本模型给出候选选题（也可直接写选题）
+  → 同一个免费文本路由生成文案（标题 ≤20 字，正文 ≤1000 字，话题 3–6 个）
+  → 文生图 Provider（工作台默认 Workers AI，1–18 张竖版 3:4；mock 需显式打开）
   → 状态变为 pending_review
   → 人工批准 / 驳回
-  → 仅批准后导出 data/exports/<jobId>/
+  → 仅批准后导出素材包
   → manifest.postNote 对齐官方 xhs.postNote 参数
 ```
 
@@ -42,7 +43,7 @@
 
 ## 出图
 
-出图不走 Grok Bot / `GenerateImage` 额度。`ImageProvider` 接口与 `mock` 实现已落地；`openai_compatible` 仅预留环境变量与报错说明。用户已有 Seedance 接口，但是视频模型，一期禁止当作文生图引擎。免费文本模型只写草稿和出图提示词，不能作为唯一出图引擎。
+出图不走 Grok Bot / `GenerateImage` 额度，也不把 Seedance 当文生图。工作台通过 Workers AI 绑定调用 `@cf/black-forest-labs/flux-2-klein-4b`，请求 768×1024。返回值如果不是 3:4，会居中裁成 3:4。`IMAGE_PROVIDER=mock` 仍生成占位图。`openai_compatible` 在配齐地址、模型和密钥后走 `/images/generations`。免费文本模型只写选题、草稿和出图提示词。
 
 ## 审核与导出
 
@@ -57,4 +58,4 @@
 | `data/catalog` | D1 `model_catalog` / `quota_snapshots` |
 | CLI 命令 | Worker 路由，在请求内执行 |
 
-D1 绑定 `DB`（数据库 `wowacool`）和 R2 绑定 `ASSETS`（桶 `wowacool-assets`）写在 `wrangler.toml`。队列仍注释。可选密钥 `APP_ACCESS_TOKEN` 不写进仓库；未设置时运营页公开可开。
+D1 绑定 `DB`（数据库 `wowacool`）、R2 绑定 `ASSETS`（桶 `wowacool-assets`）和 Workers AI 绑定 `AI` 写在 `wrangler.toml`。没有新增表或列。队列仍注释。可选密钥 `APP_ACCESS_TOKEN` 不写进仓库；未设置时运营页公开可开。

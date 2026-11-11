@@ -2,7 +2,7 @@
   "name": "wowacool",
   "version": "0.1.0",
   "private": true,
-  "description": "wowacool：小红书图文工作台一期。选题 → 文案 + 出图占位 → 人工审核 → 导出可发布素材包。文案只用 OpenRouter 免费文本模型，出图默认 mock，发布前必须人工审核。",
+  "description": "wowacool：小红书图文工作台。选题推荐 → 文案 → Workers AI 出图 → 人工审核 → 导出素材包。文案只用 OpenRouter 免费文本模型，发布前必须人工审核。",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -20,6 +20,9 @@
   },
   "bin": {
     "wowacool": "./dist/src/cli.js"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

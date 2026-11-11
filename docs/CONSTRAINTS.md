@@ -23,7 +23,9 @@
 允许：
 
 - 使用 OpenRouter 官方接口生成文案
-- 使用用户明确提供的、官方或官方授权的文生图接口（尚未提供，先 mock）
+- 使用 Cloudflare Workers AI 官方绑定做文生图（同一 Cloudflare 账号，不另加供应商密钥）
+- 在明确配置后使用 OpenAI 兼容的官方文生图接口；未配置时不发请求
+- 本地 CLI 与 `IMAGE_PROVIDER=mock` 继续使用占位图
 - 导出素材包，以及约定如何在小程序环境唤起 `xhs.postNote`
 
 禁止：

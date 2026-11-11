@@ -1,9 +1,12 @@
-import { CONTENT_MAX, IMAGES_MAX, IMAGES_MIN, PREFERRED_FREE_MODEL, TITLE_MAX } from "../constants.js";
+import { CONTENT_MAX, IMAGES_MAX, IMAGES_MIN, PREFERRED_FREE_MODEL, TITLE_MAX, TOPIC_MAX, WORKERS_AI_IMAGE_MODEL } from "../constants.js";
 import { buildImagePrompts, fixtureCopy, generateCopy, resolveImageCount } from "../copywriting/generate.js";
+import { clampTopicCount, fixtureTopics, suggestTopics, type TopicBrief } from "../copywriting/topics.js";
 import { buildExportManifest, renderExportReadme, renderImagePrompts } from "../export/package.js";
 import { encodePostNotePayload, localXhsfileUrl } from "../export/postNote.js";
 import { createImageProvider } from "../images/factory.js";
 import { toImageSpecs } from "../images/provider.js";
+import { describeImageProvider, resolveImageProvider, type ImageDescription } from "../images/status.js";
+import type { WorkersAiBinding } from "../images/workersAi.js";
 import { OpenRouterClient } from "../openrouter/client.js";
 import { buildModelRoute } from "../openrouter/router.js";
 import { isCatalogFresh } from "../openrouter/store.js";
@@ -28,16 +31,20 @@ import {
   reorderImages,
   replaceCatalog,
   replaceImages,
+  swapImage,
   saveCopy,
   saveEdits,
   saveQuota,
   saveReview,
+  type ImageSource,
   type StoredJob,
 } from "./repo.js";
 import { zipStore } from "./zip.js";
 
 const MISSING_KEY =
   "还没有配置 OPENROUTER_API_KEY。在部署环境执行 npx wrangler secret put OPENROUTER_API_KEY 后再生成文案。不会改用付费模型。你可以先使用示例文案，把配图、审核和导出走完。";
+const MISSING_KEY_TOPICS =
+  "还没有配置 OPENROUTER_API_KEY。在部署环境执行 npx wrangler secret put OPENROUTER_API_KEY 后再推荐选题。不会改用付费模型。你可以先使用示例选题。";
 const QUOTA_EMPTY =
   "免费模型今日额度已用完，已停止生成，不会改用付费模型。请明天再试，或先使用示例文案完成这条任务。";
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
@@ -53,7 +60,7 @@ export async function createJobResponse(request: Request, env: Env): Promise<Res
   const body = await readJson(request);
   const topic = typeof body.topic === "string" ? body.topic.trim() : "";
   if (!topic) throw new HttpError(400, "请先写一个选题", "missing_topic");
-  if (countChars(topic) > 120) throw new HttpError(400, "选题请控制在 120 字以内", "topic_too_long");
+  if (countChars(topic) > TOPIC_MAX) throw new HttpError(400, `选题请控制在 ${TOPIC_MAX} 字以内`, "topic_too_long");
   const job = await createJob(db, topic);
   return json({ ok: true, job: presentJob(job, originOf(request)) }, 201);
 }
@@ -125,24 +132,15 @@ export async function draftResponse(request: Request, env: Env, id: string): Pro
     return json({ ok: true, job: presentJob(next, originOf(request)), fixture: true });
   }
 
-  const key = optionalSecret(env, "OPENROUTER_API_KEY");
-  if (!key) throw new HttpError(400, MISSING_KEY, "missing_api_key");
   try {
-    const client = new OpenRouterClient(key);
-    const models = await ensureModels(db, client);
-    const quota = await client.getQuota();
-    await saveQuota(db, quota);
-    if (quota.freeModelDailyRequests?.remaining === 0) {
-      throw new HttpError(429, QUOTA_EMPTY, "quota_exhausted");
-    }
-    const route = buildModelRoute(models, { preferredId: preferredModel(env) });
+    const prepared = await prepareFreeText(env, db, MISSING_KEY);
     const generated = await generateCopy({
-      client,
-      route,
+      client: prepared.client,
+      route: prepared.route,
       topic: job.topic,
       imageCount,
-      catalog: models,
-      quota,
+      catalog: prepared.models,
+      quota: prepared.quota,
     });
     await saveCopy(db, job, generated.draft, {
       modelUsed: generated.modelUsed,
@@ -156,13 +154,54 @@ export async function draftResponse(request: Request, env: Env, id: string): Pro
   return json({ ok: true, job: presentJob(next, originOf(request)), fixture: false });
 }
 
+export async function topicsResponse(request: Request, env: Env): Promise<Response> {
+  const { db } = requirePlatform(env);
+  const body = await readJson(request);
+  const brief = readBrief(body);
+  const count = clampTopicCount(typeof body.count === "number" ? body.count : undefined);
+  if (body.fixture === true) {
+    return json({
+      ok: true,
+      fixture: true,
+      topics: fixtureTopics(brief, count),
+      modelUsed: "fixture/local",
+      fallbacksOffered: [],
+    });
+  }
+  try {
+    const prepared = await prepareFreeText(env, db, MISSING_KEY_TOPICS);
+    const suggested = await suggestTopics({
+      client: prepared.client,
+      route: prepared.route,
+      brief,
+      count,
+      catalog: prepared.models,
+      quota: prepared.quota,
+    });
+    return json({
+      ok: true,
+      fixture: false,
+      topics: suggested.topics,
+      modelUsed: suggested.modelUsed,
+      fallbacksOffered: suggested.fallbacksOffered,
+    });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw topicFailure(error);
+  }
+}
+
 export async function generateImagesResponse(request: Request, env: Env, id: string): Promise<Response> {
   const { db, bucket } = requirePlatform(env);
   const job = await requireJob(db, id);
   assertMutable(job);
   const body = await readJson(request);
-  if (job.images.length > 0 && body.replace !== true) {
-    throw new HttpError(409, "当前已有图片。生成占位图会替换它们，确认后才会继续。", "confirm_replace");
+  const redrawIndex = readRedrawIndex(body.index, job.images.length);
+  if ((redrawIndex ? true : job.images.length > 0) && body.replace !== true) {
+    const message = redrawIndex
+      ? `重画会替换第 ${redrawIndex} 张图片，确认后才会继续。`
+      : "当前已有图片。重新生成会替换它们，确认后才会继续。";
+    throw new HttpError(409, message, "confirm_replace");
   }
   const count = resolveImageCount(
     typeof body.count === "number" ? body.count : undefined,
@@ -170,37 +209,37 @@ export async function generateImagesResponse(request: Request, env: Env, id: str
   );
   const prompts = buildImagePrompts(
     job.topic,
-    count,
+    redrawIndex ? Math.max(count, job.images.length, redrawIndex) : count,
     job.imagePrompts.length ? job.imagePrompts : job.images.map((image) => image.prompt),
   );
-  const provider = createImageProvider(
-    {
-      imageProvider: String(env.IMAGE_PROVIDER || "mock") === "openai_compatible" ? "openai_compatible" : "mock",
-      imageGen: {},
-    },
-    { mock: { width: 120, height: 160 } },
-  );
+  const provider = openImageProvider(env);
+  const specs = redrawIndex
+    ? [{ prompt: prompts[redrawIndex - 1] || job.images[redrawIndex - 1]?.prompt || job.topic, index: redrawIndex }]
+    : toImageSpecs(prompts);
   let generated;
   try {
-    generated = await provider.generate(toImageSpecs(prompts));
+    generated = await provider.generate(specs);
   } catch (error) {
     const message = redactSecrets(error instanceof Error ? error.message : "出图失败");
     throw new HttpError(400, message, "image_failed");
   }
-  await replaceImages(
-    db,
-    bucket,
-    job,
-    generated.map((image) => ({
-      filename: image.filename,
-      prompt: image.prompt,
-      bytes: new Uint8Array(image.bytes),
-      mimeType: image.mimeType,
-      source: "mock",
-    })),
-  );
+  const source = imageSourceOf(provider.id);
+  const incoming = generated.map((image) => ({
+    filename: image.filename,
+    prompt: image.prompt,
+    bytes: new Uint8Array(image.bytes),
+    mimeType: image.mimeType,
+    source,
+  }));
+  if (redrawIndex) {
+    const target = job.images[redrawIndex - 1];
+    if (!target || !incoming[0]) throw new HttpError(400, "要重画的图片不存在", "bad_index");
+    await swapImage(db, bucket, job, target.id, incoming[0]);
+  } else {
+    await replaceImages(db, bucket, job, incoming);
+  }
   const next = await requireJob(db, id);
-  return json({ ok: true, job: presentJob(next, originOf(request)), provider: provider.id });
+  return json({ ok: true, job: presentJob(next, originOf(request)), provider: provider.id, image: describeImages(env) });
 }
 
 export async function uploadImagesResponse(request: Request, env: Env, id: string): Promise<Response> {
@@ -392,15 +431,16 @@ export async function quotaResponse(env: Env): Promise<Response> {
       fresh: false,
       quota: cached,
       message: MISSING_KEY,
+      image: describeImages(env),
     });
   }
   try {
     const quota = await new OpenRouterClient(key).getQuota();
     await saveQuota(db, quota);
-    return json({ ok: true, configured: true, fresh: true, quota, message: quotaMessage(quota) });
+    return json({ ok: true, configured: true, fresh: true, quota, message: quotaMessage(quota), image: describeImages(env) });
   } catch (error) {
     const message = redactSecrets(error instanceof Error ? error.message : "额度查询失败");
-    return json({ ok: true, configured: true, fresh: false, quota: cached, message });
+    return json({ ok: true, configured: true, fresh: false, quota: cached, message, image: describeImages(env) });
   }
 }
 
@@ -423,6 +463,88 @@ export async function refreshCatalogResponse(env: Env): Promise<Response> {
     if (error instanceof HttpError) throw error;
     throw new HttpError(502, redactSecrets(error instanceof Error ? error.message : "模型目录刷新失败"), "catalog_failed");
   }
+}
+
+async function prepareFreeText(env: Env, db: D1Database, missingKey: string) {
+  const key = optionalSecret(env, "OPENROUTER_API_KEY");
+  if (!key) throw new HttpError(400, missingKey, "missing_api_key");
+  const client = new OpenRouterClient(key);
+  const models = await ensureModels(db, client);
+  const quota = await client.getQuota();
+  await saveQuota(db, quota);
+  if (quota.freeModelDailyRequests?.remaining === 0) {
+    throw new HttpError(429, QUOTA_EMPTY, "quota_exhausted");
+  }
+  const route = buildModelRoute(models, { preferredId: preferredModel(env) });
+  return { client, models, quota, route };
+}
+
+function readBrief(body: Record<string, unknown>): TopicBrief {
+  const niche = optionalString(body.niche, 40, "领域")?.trim() ?? "";
+  const audience = optionalString(body.audience, 40, "受众")?.trim() ?? "";
+  const keywords = optionalString(body.keywords, 80, "关键词")?.trim() ?? "";
+  const idea = optionalString(body.idea, 200, "想法")?.trim() ?? "";
+  if (!niche && !audience && !keywords && !idea) {
+    throw new HttpError(400, "请先写领域、受众、关键词，或一个粗略想法", "missing_brief");
+  }
+  return { niche, audience, keywords, idea };
+}
+
+function readRedrawIndex(value: unknown, imageCount: number): number | null {
+  if (value === undefined) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > imageCount) {
+    throw new HttpError(400, "要重画的图片不存在", "bad_index");
+  }
+  return value;
+}
+
+export function describeImages(env: Env): ImageDescription {
+  const provider = resolveImageProvider(env.IMAGE_PROVIDER);
+  const openAiModel = optionalSecret(env, "IMAGE_GEN_MODEL");
+  return describeImageProvider({
+    provider,
+    hasAiBinding: aiBinding(env) !== null,
+    model: optionalSecret(env, "WORKERS_AI_IMAGE_MODEL") || WORKERS_AI_IMAGE_MODEL,
+    openAiConfigured: Boolean(optionalSecret(env, "IMAGE_GEN_BASE_URL") && optionalSecret(env, "IMAGE_GEN_API_KEY") && openAiModel),
+    openAiModel,
+  });
+}
+
+function openImageProvider(env: Env) {
+  const provider = resolveImageProvider(env.IMAGE_PROVIDER);
+  return createImageProvider(
+    {
+      imageProvider: provider,
+      workersAiModel: optionalSecret(env, "WORKERS_AI_IMAGE_MODEL") || WORKERS_AI_IMAGE_MODEL,
+      imageGen: {
+        baseUrl: optionalSecret(env, "IMAGE_GEN_BASE_URL"),
+        apiKey: optionalSecret(env, "IMAGE_GEN_API_KEY"),
+        model: optionalSecret(env, "IMAGE_GEN_MODEL"),
+        path: optionalSecret(env, "IMAGE_GEN_PATH") || "/images/generations",
+      },
+    },
+    { mock: { width: 120, height: 160 }, ai: aiBinding(env) },
+  );
+}
+
+function aiBinding(env: Env): WorkersAiBinding | null {
+  if (!("AI" in env)) return null;
+  const ai = Reflect.get(env, "AI");
+  if (typeof ai !== "object" || ai === null || typeof Reflect.get(ai, "run") !== "function") return null;
+  return ai as WorkersAiBinding;
+}
+
+function imageSourceOf(providerId: string): ImageSource {
+  if (providerId === "workers_ai" || providerId === "openai_compatible" || providerId === "mock") return providerId;
+  return "mock";
+}
+
+function topicFailure(error: unknown): HttpError {
+  const message = redactSecrets(error instanceof Error ? error.message : "选题推荐失败");
+  if (message.includes("额度") || /daily|free model|free-model/i.test(message)) {
+    return new HttpError(429, message.includes("额度") ? message : QUOTA_EMPTY, "quota_exhausted");
+  }
+  return new HttpError(502, message, "topics_failed");
 }
 
 async function ensureModels(db: D1Database, client: OpenRouterClient): Promise<FreeModel[]> {

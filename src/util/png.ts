@@ -30,6 +30,21 @@ export interface PngOptions {
   band?: number;
 }
 
+/** 把已经排好的 RGB 像素写成不依赖第三方库的 PNG。 */
+export function encodeRgbPng(width: number, height: number, rgb: Uint8Array): Buffer {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new Error("PNG 尺寸不正确");
+  }
+  if (rgb.length !== width * height * 3) throw new Error("RGB 长度不正确");
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    raw[row] = 0;
+    Buffer.from(rgb.buffer, rgb.byteOffset + y * width * 3, width * 3).copy(raw, row + 1);
+  }
+  return wrapPng(width, height, raw);
+}
+
 /** 生成不依赖第三方库的有效 PNG（竖版占位图） */
 export function encodePng(options: PngOptions): Buffer {
   const { width, height, color, band = 0 } = options;
@@ -53,6 +68,10 @@ export function encodePng(options: PngOptions): Buffer {
       raw[i + 2] = b;
     }
   }
+  return wrapPng(width, height, raw);
+}
+
+function wrapPng(width: number, height: number, raw: Buffer): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);

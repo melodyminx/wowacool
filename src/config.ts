@@ -1,4 +1,4 @@
-import { PREFERRED_FREE_MODEL } from "./constants.js";
+import { PREFERRED_FREE_MODEL, WORKERS_AI_IMAGE_MODEL } from "./constants.js";
 import { loadProjectEnv } from "./util/env.js";
 import { findProjectRoot, resolveDataPaths, type DataPaths } from "./util/paths.js";
 
@@ -7,7 +7,8 @@ export interface AppConfig {
   paths: DataPaths;
   openRouterApiKey?: string;
   preferredModel: string;
-  imageProvider: "mock" | "openai_compatible";
+  imageProvider: "mock" | "openai_compatible" | "workers_ai";
+  workersAiModel: string;
   imageGen?: {
     baseUrl?: string;
     apiKey?: string;
@@ -19,14 +20,16 @@ export interface AppConfig {
 export function loadConfig(): AppConfig {
   const projectRoot = findProjectRoot();
   loadProjectEnv(projectRoot);
+  const requested = process.env.IMAGE_PROVIDER;
   const imageProvider =
-    process.env.IMAGE_PROVIDER === "openai_compatible" ? "openai_compatible" : "mock";
+    requested === "openai_compatible" || requested === "workers_ai" || requested === "mock" ? requested : "mock";
   return {
     projectRoot,
     paths: resolveDataPaths(projectRoot),
     openRouterApiKey: process.env.OPENROUTER_API_KEY || undefined,
     preferredModel: process.env.OPENROUTER_PREFERRED_MODEL || PREFERRED_FREE_MODEL,
     imageProvider,
+    workersAiModel: process.env.WORKERS_AI_IMAGE_MODEL || WORKERS_AI_IMAGE_MODEL,
     imageGen: {
       baseUrl: process.env.IMAGE_GEN_BASE_URL,
       apiKey: process.env.IMAGE_GEN_API_KEY,

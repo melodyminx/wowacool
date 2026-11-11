@@ -14,10 +14,19 @@ upload_source_maps = true
 # Non-secret defaults. Set OPENROUTER_API_KEY with `npx wrangler secret put`
 # after the account is connected. Never commit secret values.
 [vars]
-IMAGE_PROVIDER = "mock"
+# workers_ai uses the AI binding below. Set mock to force placeholders.
+# openai_compatible stays available when IMAGE_GEN_* secrets are set.
+IMAGE_PROVIDER = "workers_ai"
 PHASE = "2"
 # Non-secret routing hint. The live catalog still decides which free text models exist.
 OPENROUTER_PREFERRED_MODEL = "liquid/lfm-3-1.7b:free"
+# Official still-image model. FLUX.2 [klein] 4B accepts width and height.
+# Not Seedance (video) and not a Grok / xAI image API.
+WORKERS_AI_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+
+# Same Cloudflare account. No extra vendor key. Do not put an account id here.
+[ai]
+binding = "AI"
 
 # Optional Worker secrets, set with `npx wrangler secret put`, never committed:
 #   OPENROUTER_API_KEY   free-text copy generation

@@ -15,12 +15,13 @@
 - `GET /` 是运营工作台，`GET /health` 仍是 JSON。D1 与 R2 已绑定。`schema/d1.sql` 已应用到数据库 `wowacool`，本次没有新增列，部署前不用再跑 SQL。
 - 队列保持未绑定。不要在配置里写账号 ID。
 
-## 出图接口缺失
+## 出图
 
-- 文生图接口与密钥尚未提供。
-- 用户已有 Seedance 接口，但是视频模型，不能当文生图。
-- 一期用 mock / placeholder 图跑通流程；`IMAGE_PROVIDER=openai_compatible` 只预留约定，未配置或未验证前拒绝发真实请求。
-- 免费文本模型只能写草稿和出图提示词，不能当唯一出图引擎。
+- 工作台默认 `IMAGE_PROVIDER=workers_ai`，通过 Worker 的 `AI` 绑定调用 `@cf/black-forest-labs/flux-2-klein-4b`，请求 768×1024（3:4）。绑定缺失时接口会说明，不会偷偷改成占位图。
+- `IMAGE_PROVIDER=mock` 仍是明确的占位图回退。本地 CLI 没有 AI 绑定，默认继续 mock。
+- `IMAGE_PROVIDER=openai_compatible` 只在地址、模型和密钥都配齐时发请求。Seedance 与 Grok / xAI 会被拒绝。
+- 免费文本模型只写选题、草稿和出图提示词，不是出图引擎。
+- 视频生成和视频发布仍然不做。
 
 ## 发布能力缺失
 
