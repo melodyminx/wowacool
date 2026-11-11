@@ -83,6 +83,28 @@ export function buildExportManifest(job: Job, imageUrlResolver?: (filename: stri
   };
 }
 
+export function renderImagePrompts(job: Job): string {
+  const prompts = job.images.map((image, i) => `${i + 1}. ${image.filename}: ${image.prompt}`).join("\n");
+  return `${prompts}\n`;
+}
+
+export function renderExportReadme(job: Job, notes: string[]): string {
+  return [
+    "小红书图文素材包（一期导出）",
+    `任务：${job.id}`,
+    `选题：${job.topic}`,
+    "",
+    "文件说明：",
+    "- manifest.json  完整清单，postNote 字段对齐官方唤起参数",
+    "- postnote.json  仅含 title / content / mediaInfo / tags",
+    "- images/        待发布图片（1–18 张）",
+    "- image-prompts.txt 每张图的出图提示词",
+    "",
+    ...notes,
+    "",
+  ].join("\n");
+}
+
 export function writeExportPackage(job: Job, jobsDir: string, exportsDir: string): ExportResult {
   const manifest = buildExportManifest(job);
   const exportDir = resolve(exportsDir, job.id);
@@ -97,31 +119,13 @@ export function writeExportPackage(job: Job, jobsDir: string, exportsDir: string
     copyFileSync(source, resolve(imagesDir, basename(image.filename)));
   }
 
-  const prompts = job.images.map((image, i) => `${i + 1}. ${image.filename}: ${image.prompt}`).join("\n");
-  writeFileSync(resolve(exportDir, "image-prompts.txt"), `${prompts}\n`, "utf8");
+  writeFileSync(resolve(exportDir, "image-prompts.txt"), renderImagePrompts(job), "utf8");
 
   const manifestPath = resolve(exportDir, "manifest.json");
   const postNotePath = resolve(exportDir, "postnote.json");
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   writeFileSync(postNotePath, `${JSON.stringify(manifest.postNote, null, 2)}\n`, "utf8");
-  writeFileSync(
-    resolve(exportDir, "README.txt"),
-    [
-      "小红书图文素材包（一期导出）",
-      `任务：${job.id}`,
-      `选题：${job.topic}`,
-      "",
-      "文件说明：",
-      "- manifest.json  完整清单，postNote 字段对齐官方唤起参数",
-      "- postnote.json  仅含 title / content / mediaInfo / tags",
-      "- images/        待发布图片（1–18 张）",
-      "- image-prompts.txt 每张图的出图提示词",
-      "",
-      ...manifest.notes,
-      "",
-    ].join("\n"),
-    "utf8",
-  );
+  writeFileSync(resolve(exportDir, "README.txt"), renderExportReadme(job, manifest.notes), "utf8");
 
   return { exportDir, manifestPath, postNotePath, manifest };
 }

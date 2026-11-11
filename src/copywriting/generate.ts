@@ -84,6 +84,14 @@ export async function generateCopy(options: {
   };
 }
 
+export function resolveImageCount(count: number | undefined, fallback = DEFAULT_IMAGE_COUNT): number {
+  return clampImageCount(count ?? fallback);
+}
+
+export function buildImagePrompts(topic: string, count: number, existing: string[] = []): string[] {
+  return ensureImagePrompts(existing, topic, clampImageCount(count));
+}
+
 export function fixtureCopy(topic: string, imageCount = DEFAULT_IMAGE_COUNT): CopyDraft {
   const count = clampImageCount(imageCount);
   const prompts = ensureImagePrompts([], topic, count);

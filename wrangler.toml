@@ -1,5 +1,6 @@
 # wowacool Worker. Entry: src/cloudflare/worker.ts
-# Phase 1 deploys a health surface. The local CLI does not need this file.
+# GET / serves the operations workbench. GET /health stays JSON.
+# The local CLI does not need this file.
 # Do not put Cloudflare account IDs or API tokens in this file.
 # CI reads CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN from GitHub Actions secrets.
 
@@ -14,7 +15,14 @@ upload_source_maps = true
 # after the account is connected. Never commit secret values.
 [vars]
 IMAGE_PROVIDER = "mock"
-PHASE = "1"
+PHASE = "2"
+# Non-secret routing hint. The live catalog still decides which free text models exist.
+OPENROUTER_PREFERRED_MODEL = "liquid/lfm-3-1.7b:free"
+
+# Optional Worker secrets, set with `npx wrangler secret put`, never committed:
+#   OPENROUTER_API_KEY   free-text copy generation
+#   APP_ACCESS_TOKEN      optional gate for the public workers.dev URL
+# If APP_ACCESS_TOKEN is unset, the workbench stays open so it can be demoed after deploy.
 
 [observability]
 enabled = true
@@ -25,23 +33,20 @@ enabled = true
 
   [observability.traces]
   enabled = true
-  # Full traces while this Worker only serves health checks. Lower this if traffic grows.
+  # Ops traffic is low; keep full traces until the workbench is busy.
   head_sampling_rate = 1
 
-# D1, R2, and Queues are NOT bound yet.
-# Leave these commented until the resources exist. Uncommenting a binding
-# without an id can make Wrangler auto-provision the resource and write the
-# id back into this file. Create the resource first, then paste only the
-# resource id — still never an account id or API token.
+# Resource ids only. Never put an account id or API token in this file.
+# Queues stay unused: job steps run inside the request.
 
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "wowacool"
-# database_id = "SET_AFTER_D1_DATABASE_EXISTS"
+[[d1_databases]]
+binding = "DB"
+database_name = "wowacool"
+database_id = "9cebe552-537a-4268-bc12-5c046e2cd88a"
 
-# [[r2_buckets]]
-# binding = "ASSETS"
-# bucket_name = "wowacool-assets"
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "wowacool-assets"
 
 # [[queues.producers]]
 # binding = "JOB_QUEUE"

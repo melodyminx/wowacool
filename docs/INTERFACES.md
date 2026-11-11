@@ -70,17 +70,30 @@ data/exports/<jobId>/
 
 `manifest.postNote` 与 `postnote.json` 对齐官方 payload。编码函数：`encodePostNotePayload`、`encodeApprovedPackage`，均不发网络请求。
 
-## 计划中的 Worker 路由
+## Worker 路由
+
+`GET /` 返回中文运营页。`GET /health` 返回 JSON。下面的任务路由读写 D1 / R2，不发布笔记。
 
 | 路由 | 含义 |
 | --- | --- |
 | GET /health | 存活检查 |
-| POST /catalog/refresh | 刷新免费模型目录 |
-| GET /quota | 查询额度 |
+| GET / | 运营工作台 |
+| GET /quota | 查询额度；未配置密钥时返回说明，不报 500 |
+| POST /catalog/refresh | 刷新免费文本模型目录 |
+| GET /catalog | 查看已缓存的免费文本模型与当前路由 |
 | POST /jobs | 创建任务 |
-| POST /jobs/:id/draft | 生成文案 |
-| POST /jobs/:id/images | 出图 |
-| POST /jobs/:id/review | 批准或驳回 |
-| POST /jobs/:id/export | 导出素材包 |
+| GET /jobs | 任务列表 |
+| GET /jobs/:id | 任务详情 |
+| PATCH /jobs/:id | 修改标题、正文、话题、出图提示词 |
+| POST /jobs/:id/draft | 生成文案。`{ "fixture": true }` 使用示例文案，不调用模型 |
+| POST /jobs/:id/images | 按现有 Provider 出图，默认 mock。已有图片时需 `{ "replace": true }` |
+| POST /jobs/:id/images/upload | 上传 PNG / JPEG / WEBP / GIF |
+| POST /jobs/:id/images/reorder | 调整图片顺序 |
+| DELETE /jobs/:id/images/:assetId | 删除一张图 |
+| GET /jobs/:id/images/:assetId | 读取图片，`content-disposition: inline` |
+| POST /jobs/:id/review | `{ "decision": "approved" \| "rejected", "note"?: string }`。驳回必须带说明 |
+| POST /jobs/:id/export | 仅批准后导出素材包与 `postNote` |
+| GET /jobs/:id/package | 下载 zip |
+| POST /jobs/:id/duplicate | 复制为一条需要重新审核的新任务 |
 
-`GET /health` 由 Worker 实现。其余路由在 D1 / R2 / Queues 绑定前返回 501，请使用 CLI 等价命令。Worker 不发送小红书、OpenRouter 或出图请求。
+若设置了 Worker 密钥 `APP_ACCESS_TOKEN`，除 `/`、`/health`、`/favicon.svg` 和 `/session` 外都要先解锁。未设置时这些接口保持开放。
