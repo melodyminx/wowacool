@@ -16,7 +16,11 @@ export function log(level: LogLevel, message: string, extra?: unknown): void {
   const serialized = JSON.stringify(line);
   const prefix = level === "error" ? "error" : level === "warn" ? "warn" : "info";
   const out = level === "error" ? process.stderr : process.stdout;
-  out.write(`[${prefix}] ${safeMessage}${extra !== undefined ? ` ${JSON.stringify(line.extra)}` : ""}\n`);
+  try {
+    out?.write?.(`[${prefix}] ${safeMessage}${extra !== undefined ? ` ${JSON.stringify(line.extra)}` : ""}\n`);
+  } catch {
+    // stdout 不可用时不影响文案生成（例如 Worker 运行时）
+  }
   try {
     const { logsDir } = resolveDataPaths();
     mkdirSync(logsDir, { recursive: true });

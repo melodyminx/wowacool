@@ -27,7 +27,7 @@
 - `data/exports/<jobId>/`：可发布素材包
 - `data/logs/`：运行日志（自动脱敏）
 
-这套路径不依赖 Cloudflare D1、R2 或 Queues。Worker `wowacool`（`src/cloudflare/worker.ts`）可以先部署 `GET /health`。任务仍由本地 CLI 执行。D1 / R2 / Queues 的绑定在 `wrangler.toml` 中保持注释，表结构草稿见 `schema/d1.sql`。
+这套本地路径不依赖 Cloudflare。线上运营页走同一个领域函数，但把任务写到 D1、把图片和素材包写到 R2。Worker `wowacool`（`src/cloudflare/worker.ts`）在 `GET /` 返回工作台，在 `GET /health` 返回 JSON。表结构见 `schema/d1.sql`，现有库已经包含这些表，没有额外迁移。队列未启用，文案、出图、审核和导出都在当前请求里完成。
 
 ## 免费模型路由
 
@@ -48,13 +48,13 @@
 
 审核门禁是硬约束：`status !== approved` 时拒绝导出。导出清单的 `postNote` 字段直接对齐官方唤起参数。`encodePostNotePayload` 是纯函数，不发网络请求。辅助发布只能约定如何唤起 `xhs.postNote`，由用户自己点发布，本仓库不实现自动发布、浏览器登录抓取或非官方发布。
 
-## 计划中的 Cloudflare 映射
+## Cloudflare 映射
 
-| 本地 | 计划中的云资源 |
+| 本地 | 线上 |
 | --- | --- |
-| `data/jobs` | D1 `jobs` + R2 草稿对象 |
-| `data/exports` | R2 导出桶 |
+| `data/jobs` | D1 `jobs` / `assets`，图片对象在 R2 |
+| `data/exports` | R2 `jobs/<id>/export/`，并提供 zip 下载 |
 | `data/catalog` | D1 `model_catalog` / `quota_snapshots` |
-| CLI 命令 | Worker 路由 + Queues 异步执行 |
+| CLI 命令 | Worker 路由，在请求内执行 |
 
-上述绑定在 `wrangler.toml` 里保持注释，避免 Wrangler 在没有资源 id 时自动创建资源并把 id 写回配置。建好 D1 数据库 `wowacool`、R2 桶 `wowacool-assets`、队列 `wowacool-jobs` 之后再取消注释。
+D1 绑定 `DB`（数据库 `wowacool`）和 R2 绑定 `ASSETS`（桶 `wowacool-assets`）写在 `wrangler.toml`。队列仍注释。可选密钥 `APP_ACCESS_TOKEN` 不写进仓库；未设置时运营页公开可开。

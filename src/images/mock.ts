@@ -2,9 +2,16 @@ import type { GeneratedImage, ImageProvider, ImageSpec } from "./provider.js";
 import { assertImageCount } from "./provider.js";
 import { placeholderPng } from "../util/png.js";
 
+export interface MockImageOptions {
+  width?: number;
+  height?: number;
+}
+
 /** 本地占位出图，不调用任何外部 API，也不消耗 Grok Bot 额度 */
 export class MockImageProvider implements ImageProvider {
   readonly id = "mock";
+
+  constructor(private readonly options: MockImageOptions = {}) {}
 
   async generate(specs: ImageSpec[]): Promise<GeneratedImage[]> {
     assertImageCount(specs.length);
@@ -15,7 +22,7 @@ export class MockImageProvider implements ImageProvider {
         prompt: spec.prompt,
         mimeType: "image/png" as const,
         filename,
-        bytes: placeholderPng(spec.index - 1),
+        bytes: placeholderPng(spec.index - 1, this.options.width, this.options.height),
         provider: this.id,
       };
     });

@@ -12,8 +12,8 @@
 
 - 代码在 GitHub 仓库 `wowacool`。推到 `main` 时 `.github/workflows/deploy.yml` 会用 Wrangler 部署 Worker `wowacool`。
 - 部署前需要在 GitHub Actions 设置仓库密钥 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID`。不要把这两个值写进仓库。
-- `GET /health` 可以单独部署。D1、R2、Queues 还没有绑定：`wrangler.toml` 里对应段落保持注释，`schema/d1.sql` 仍是草稿。任务路由在绑定存在前返回 501。
-- 创建资源后再取消注释并填入资源 id。不要在配置里写账号 ID。
+- `GET /` 是运营工作台，`GET /health` 仍是 JSON。D1 与 R2 已绑定。`schema/d1.sql` 已应用到数据库 `wowacool`，本次没有新增列，部署前不用再跑 SQL。
+- 队列保持未绑定。不要在配置里写账号 ID。
 
 ## 出图接口缺失
 
@@ -26,7 +26,7 @@
 
 - 开放平台 `write_notes` scope 仍为「规划中」（https://openaccount.xiaohongshu.com/docs/scope）。
 - 辅助发布需小红书小程序 / 小组件环境才能真正唤起 `xhs.postNote`。本地导出的 `xhsfile://export/...` 只是素材包占位协议，真正唤起前需要替换为可访问的 `https://` 或小红书本地 `xhsfile` 资源。
-- 网络图还需要 `content-disposition: inline`，本期没有图床 / R2 公网分发。
+- 导出的图片 URL 指向 Worker 自身，响应带 `content-disposition: inline`。若设置了 `APP_ACCESS_TOKEN`，这些链接需要口令，真正唤起小红书前要换成可公开访问的 https 图片。未设置口令时，链接对知道地址的人开放。
 
 ## OpenRouter 额度有限
 

@@ -1,5 +1,6 @@
--- wowacool D1 draft. Phase 1 uses the data/ filesystem and does not require this database.
--- Apply only after a D1 database named wowacool exists. Do not put account ids here.
+-- wowacool D1 schema for database wowacool.
+-- Already applied. The Worker uses these tables as-is; no extra migration is required.
+-- Do not put account ids here.
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,

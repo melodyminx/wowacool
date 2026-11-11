@@ -4,6 +4,8 @@
 
 总管是「自动视频工作流」；本仓库只做小红书图文，暂不做视频、抖音、视频号。官方 `write_notes` 仍在规划中，本期只导出素材包，并约定如何唤起官方发布页 `xhs.postNote`，由用户自己点发布。不抓取浏览器登录态，不代发。
 
+线上工作台由同一个 Worker 提供：打开 `https://wowacool.melody6188.workers.dev/` 是中文运营页，`GET /health` 仍返回 JSON。任务存在 D1，图片和素材包存在 R2。本地 CLI 继续可用，数据仍在 `data/`。
+
 ## 如何本地跑
 
 要求：Node.js 22.12+（Wrangler 4 部署与类型生成需要；本地 CLI 测试同样使用这个版本）。
@@ -49,13 +51,15 @@ npm run cli -- run --topic "桌面整理小巧思" --images 3 --skip-llm --appro
 - 文案只走 OpenRouter 免费文本模型，带官方 `models` 回退与本地 429 / 不可用切换；回退链禁止出现付费模型。
 - 出图走 Provider 接口，默认 mock，不调用 Grok 出图接口。真实文生图密钥尚未提供。Seedance 是视频模型，不是一期出图引擎。
 - 审核门禁强制：未批准不得导出。
-- Cloudflare Worker `wowacool` 可部署健康检查。D1 / R2 / Queues 仍注释，本地数据在 `data/`。
+- Cloudflare Worker `wowacool` 在 `/` 提供运营工作台，在 `/health` 提供健康检查。任务步骤在请求内完成，不依赖队列。本地 CLI 数据仍在 `data/`。
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/CONSTRAINTS.md](docs/CONSTRAINTS.md)、[docs/INTERFACES.md](docs/INTERFACES.md)、[docs/POSTNOTE.md](docs/POSTNOTE.md)。
 
 ## 部署到 Cloudflare
 
-Worker 入口是 `src/cloudflare/worker.ts`，配置在 `wrangler.toml`。`GET /health` 可上线；任务路由返回 501，直到 D1、R2、Queues 建好。配置里没有账号 ID 或 API token。
+Worker 入口是 `src/cloudflare/worker.ts`，配置在 `wrangler.toml`。`GET /` 是运营页，`GET /health` 是 JSON。D1 `wowacool` 与 R2 `wowacool-assets` 已绑定。配置里没有账号 ID 或 API token。队列保持注释，任务步骤在请求内完成。
+
+`schema/d1.sql` 已经应用到现有数据库，这次没有新增表或列，部署前不需要再执行 SQL。
 
 本地检查打包（不上传）：
 
@@ -71,14 +75,20 @@ npm run deploy:check
 创建 token：https://dash.cloudflare.com/?to=/:account/api-tokens  
 查找 Account ID：https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/
 
-文案密钥不要写进仓库。资源就绪后执行：
+文案密钥不要写进仓库。部署后执行：
 
 ```bash
 npx wrangler secret put OPENROUTER_API_KEY
 ```
 
-D1、R2、Queues 的绑定在 `wrangler.toml` 里保持注释。建好资源后再取消注释并填入资源 id，不要把账号 ID 写进文件。
+`workers.dev` 地址是公开的。如果希望只有团队能打开运营页，再设置可选口令；不设置时页面保持开放，方便部署后直接演示：
+
+```bash
+npx wrangler secret put APP_ACCESS_TOKEN
+```
+
+未配置 `OPENROUTER_API_KEY` 或免费额度用尽时，页面会说明原因，并可以改用示例文案把配图、审核和导出走完。不会改用付费模型。出图默认仍是 mock，也可以上传自己的图片。导出的是素材包和官方 `xhs.postNote` 参数，不会发布到小红书。
 
 ## 缺口
 
-文生图接口未提供；`write_notes` 仍规划中；GitHub Actions 密钥与 Cloudflare D1 / R2 / Queues 需要手工创建。完整清单见 [docs/GAPS.md](docs/GAPS.md)。
+文生图接口未提供；`write_notes` 仍规划中。D1 与 R2 已绑定，队列仍不使用。完整清单见 [docs/GAPS.md](docs/GAPS.md)。
