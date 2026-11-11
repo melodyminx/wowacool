@@ -1,0 +1,53 @@
+# wowacool Worker. Entry: src/cloudflare/worker.ts
+# Phase 1 deploys a health surface. The local CLI does not need this file.
+# Do not put Cloudflare account IDs or API tokens in this file.
+# CI reads CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN from GitHub Actions secrets.
+
+name = "wowacool"
+main = "src/cloudflare/worker.ts"
+compatibility_date = "2026-11-11"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+upload_source_maps = true
+
+# Non-secret defaults. Set OPENROUTER_API_KEY with `npx wrangler secret put`
+# after the account is connected. Never commit secret values.
+[vars]
+IMAGE_PROVIDER = "mock"
+PHASE = "1"
+
+[observability]
+enabled = true
+
+  [observability.logs]
+  enabled = true
+  head_sampling_rate = 1
+
+  [observability.traces]
+  enabled = true
+  # Full traces while this Worker only serves health checks. Lower this if traffic grows.
+  head_sampling_rate = 1
+
+# D1, R2, and Queues are NOT bound yet.
+# Leave these commented until the resources exist. Uncommenting a binding
+# without an id can make Wrangler auto-provision the resource and write the
+# id back into this file. Create the resource first, then paste only the
+# resource id — still never an account id or API token.
+
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "wowacool"
+# database_id = "SET_AFTER_D1_DATABASE_EXISTS"
+
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "wowacool-assets"
+
+# [[queues.producers]]
+# binding = "JOB_QUEUE"
+# queue = "wowacool-jobs"
+
+# [[queues.consumers]]
+# queue = "wowacool-jobs"
+# max_batch_size = 1
+# max_retries = 3
