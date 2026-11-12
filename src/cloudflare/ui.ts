@@ -51,7 +51,7 @@ a { color: inherit; }
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: 18px;
   padding: 14px 0 12px;
-  background: rgba(243, 238, 230, .84);
+  background: rgba(243, 238, 230, .98);
   backdrop-filter: blur(16px);
 }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; min-width: 0; }
@@ -87,7 +87,16 @@ a { color: inherit; }
 .composer { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
 .brief { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 .brief textarea { grid-column: 1 / -1; min-height: 88px; }
-.topics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.topics, .projects { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.project-card { padding: 16px; display: grid; gap: 6px; text-decoration: none; color: inherit; }
+.project-card h3 { margin: 0; font-size: 18px; }
+.project-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.materials { display: grid; gap: 8px; }
+.material { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px; }
+.material .kind { font-size: 12px; color: var(--red-deep); background: #fff1f3; border-radius: 999px; padding: 3px 8px; }
+.material h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.material p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .topic-card { padding: 14px; display: grid; gap: 8px; }
 .topic-card .hint { margin: 0; }
 .known { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 16px; }
@@ -99,6 +108,8 @@ a { color: inherit; }
 }
 .field:focus, textarea:focus, .search:focus { border-color: rgba(255, 36, 66, .45); box-shadow: 0 0 0 4px rgba(255, 36, 66, .08); }
 textarea { min-height: 180px; resize: vertical; line-height: 1.65; }
+#note-body, #proj-notes, #new-notes, #review-note { min-height: 96px; }
+#topic-results { scroll-margin-top: 70px; }
 .stepper { display: flex; align-items: center; gap: 8px; background: white; border-radius: 14px; border: 1px solid var(--line); padding: 6px; }
 .stepper b { min-width: 4.5em; text-align: center; font-size: 14px; }
 .icon-btn, .stepper button {
@@ -161,6 +172,7 @@ body.is-busy .btn { opacity: .55; }
 .page-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin: 8px 0 14px; }
 .page-head > div:first-child { min-width: 0; flex: 1; }
 .page-head h1 { font-family: var(--serif); font-size: 32px; margin: 0; overflow-wrap: anywhere; }
+#proj-name { font-family: var(--serif); font-size: 32px; margin: 8px 0; }
 .page-head .actions { flex: none; }
 .steps { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; padding: 0; margin: 8px 0 0; }
 .steps li { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 13px; }
@@ -238,22 +250,25 @@ label.lbl { display: block; font-size: 13px; margin: 10px 0 6px; color: var(--mu
 .lock .card { width: min(420px, 100%); padding: 28px; }
 .lock h1 { font-family: var(--serif); margin: 12px 0 8px; }
 #toast {
-  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
+  position: fixed; top: 16px; right: 16px; z-index: 40; transform: translateY(-8px);
   background: var(--ink); color: white; border-radius: 999px; padding: 10px 16px; font-size: 13px;
   opacity: 0; pointer-events: none; transition: .2s ease;
 }
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.show { opacity: 1; transform: translateY(0); }
 pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614; color: #f6efe8; border-radius: 16px; padding: 12px; font-size: 12px; line-height: 1.5; max-height: 240px; overflow: auto; }
 @media (max-width: 880px) {
   .top { flex-wrap: wrap; gap: 8px 10px; padding-top: 10px; }
   .spacer { display: none; }
   .nav { order: 3; width: 100%; }
   .chip { margin-left: auto; }
-  .composer, .meters, .soon-grid, .brief, .topics, .known { grid-template-columns: 1fr; }
+  .composer, .meters, .soon-grid, .brief, .topics, .projects, .known, .split { grid-template-columns: 1fr; }
+  .material { grid-template-columns: 1fr; }
   .soon-list { grid-template-columns: 1fr; }
   .page-head { flex-direction: column; align-items: stretch; }
   .job-card { grid-template-columns: 64px 1fr; }
   .job-card .when { display: none; }
+  #toast { top: 12px; }
+  #topic-results { scroll-margin-top: 118px; }
   .workspace { display: block; }
   .preview-col { display: none; }
   body.pane-preview .editor-col { display: none; }
@@ -303,7 +318,16 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     authError: "",
     confirmReplace: false,
     modelQuery: "",
-    dragId: ""
+    dragId: "",
+    projects: [],
+    project: null,
+    materials: [],
+    showArchived: false,
+    ungroupedCount: 0,
+    projectForm: { name: "", positioning: "", niche: "", audience: "", notes: "" },
+    confirmArchive: false,
+    confirmDeleteProject: false,
+    scrollToTopics: false
   };
   var saveTimer = 0;
   var STATUS = {
@@ -385,6 +409,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (hash === "" || hash === "/" || hash === "/board") return { view: "board" };
     if (hash === "/quota") return { view: "quota" };
     if (hash === "/soon") return { view: "soon" };
+    if (hash === "/projects/ungrouped") return { view: "project", id: "ungrouped" };
+    var projectPrefix = "/projects/";
+    if (hash.indexOf(projectPrefix) === 0 && /^[A-Za-z0-9_-]+$/.test(hash.slice(projectPrefix.length))) {
+      return { view: "project", id: hash.slice(projectPrefix.length) };
+    }
     var prefix = "/jobs/";
     if (hash.indexOf(prefix) === 0 && /^[A-Za-z0-9_-]+$/.test(hash.slice(prefix.length))) {
       return { view: "job", id: hash.slice(prefix.length) };
@@ -420,19 +449,72 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     clearTimeout(saveTimer);
     state.route = readRoute();
     state.banner = "";
+    state.confirmArchive = false;
+    state.confirmDeleteProject = false;
     if (state.session.required && !state.session.unlocked) { render(); return Promise.resolve(); }
     if (state.route.view === "board") return loadBoard();
+    if (state.route.view === "project") return loadProject(state.route.id);
     if (state.route.view === "quota") return loadQuota();
     if (state.route.view === "job") return loadJob(state.route.id);
     render();
     return Promise.resolve();
   }
   function loadBoard() {
-    return Promise.all([api("/jobs"), api("/quota")]).then(function (pair) {
-      state.jobs = pair[0].jobs || [];
-      state.quota = pair[1];
+    return Promise.all([
+      api(state.showArchived ? "/projects?archived=1" : "/projects"),
+      api("/jobs?unassigned=1"),
+      api("/quota")
+    ]).then(function (pair) {
+      state.projects = pair[0].projects || [];
+      state.jobs = pair[1].jobs || [];
+      state.ungroupedCount = state.jobs.length;
+      state.quota = pair[2];
+      state.project = null;
+      state.materials = [];
       render();
     }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    });
+  }
+  function loadProject(id) {
+    if (id === "ungrouped") {
+      return Promise.all([api("/jobs?unassigned=1"), api("/quota")]).then(function (pair) {
+        var jobs = pair[0].jobs || [];
+        state.project = { id: "ungrouped", name: "未分组", ungrouped: true, positioning: "", niche: "", audience: "", notes: "", archived: false, materialCount: 0, jobCount: jobs.length };
+        state.materials = [];
+        state.jobs = jobs;
+        state.quota = pair[1];
+        state.topics = [];
+        state.topicNote = "";
+        state.brief = { niche: "", audience: "", keywords: "", idea: "" };
+        render();
+      }).catch(function (err) {
+        state.project = null;
+        state.banner = err.message;
+        render();
+      });
+    }
+    return Promise.all([
+      api("/projects/" + id),
+      api("/jobs?projectId=" + encodeURIComponent(id)),
+      api("/quota")
+    ]).then(function (pair) {
+      var changed = !state.project || state.project.id !== pair[0].project.id;
+      state.project = pair[0].project;
+      state.materials = pair[0].materials || [];
+      state.jobs = pair[1].jobs || [];
+      state.quota = pair[2];
+      if (changed) {
+        state.brief = { niche: pair[0].project.niche || "", audience: pair[0].project.audience || "", keywords: "", idea: "" };
+        state.topics = [];
+        state.topicNote = "";
+        state.composerTopic = "";
+      }
+      render();
+    }).catch(function (err) {
+      state.project = null;
+      state.materials = [];
       state.banner = err.message;
       render();
     });
@@ -463,8 +545,22 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         state.imageCount = clampCount(stored || data.job.imagePrompts.length || data.job.images.length || 3);
         sessionStorage.removeItem("wowacool-count");
       }
-      takeCopyHandoff();
-      render({ fresh: true });
+      var remembered = data.job.projectId
+        ? api("/projects/" + data.job.projectId).then(function (projectData) {
+            state.project = projectData.project;
+            state.materials = projectData.materials || [];
+          }).catch(function () {
+            state.project = null;
+            state.materials = [];
+          })
+        : Promise.resolve().then(function () {
+            state.project = null;
+            state.materials = [];
+          });
+      return remembered.then(function () {
+        takeCopyHandoff();
+        render({ fresh: true });
+      });
     }).catch(function (err) {
       state.job = null;
       state.banner = err.message;
@@ -483,7 +579,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     return '<header class="top wrap">' +
       '<a class="brand" href="#/"><span class="seal">图</span><span><b>wowacool</b><small>小红书图文工作台</small></span></a>' +
       '<nav class="nav">' +
-        '<a href="#/" class="' + (route === "board" || route === "job" ? "on" : "") + '">工作台</a>' +
+        '<a href="#/" class="' + (route === "board" || route === "job" || route === "project" ? "on" : "") + '">工作台</a>' +
         '<a href="#/quota" class="' + (route === "quota" ? "on" : "") + '">额度</a>' +
         '<a href="#/soon" class="' + (route === "soon" ? "on" : "") + '">即将推出</a>' +
       "</nav>" +
@@ -499,40 +595,136 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   function shell(main) { return header() + '<div class="wrap">' + main + "</div>" + footer(); }
 
   function boardHtml() {
-    var filters = ["all", "draft", "pending_review", "approved", "rejected", "exported"];
-    var names = { all: "全部" };
-    Object.keys(STATUS).forEach(function (key) { names[key] = STATUS[key]; });
-    var jobs = state.jobs.filter(function (job) { return state.filter === "all" || job.status === state.filter; });
-    var list = jobs.length ? '<div class="jobs">' + jobs.map(jobCard).join("") + "</div>" : emptyJobs();
+    var form = state.projectForm;
+    var cards = state.projects.map(function (project) {
+      return '<a class="card project-card" href="#/projects/' + esc(project.id) + '"><h3>' + esc(project.name) + "</h3><p>" +
+        esc(project.positioning || project.niche || project.notes || "还没有写定位") + "</p>" +
+        '<div class="meta"><span>' + esc(project.materialCount || 0) + " 份资料</span><span>" + esc(project.jobCount || 0) + " 条任务</span>" +
+        (project.archived ? '<span class="pill">已归档</span>' : "") + "</div></a>";
+    }).join("");
+    var ungrouped = state.showArchived ? "" :
+      '<a class="card project-card" href="#/projects/ungrouped"><h3>未分组</h3><p>还没放进项目的任务。这里没有项目资料，仍可以按关键词推荐选题。</p><div class="meta"><span>' +
+      esc(state.ungroupedCount) + " 条任务</span></div></a>";
+    var empty = !state.projects.length
+      ? '<section class="card empty"><div class="note-art"></div><h2>' + (state.showArchived ? "没有已归档的项目" : "还没有项目") + '</h2><p>' +
+        (state.showArchived ? "归档后的项目会出现在这里。" : "先建一个项目，把产品说明和参考笔记放进去，再推荐选题。") + "</p></section>"
+      : "";
     var soon = '<section class="soon-strip"><div class="row-head"><h2>还没做的事</h2><a href="#/soon">看说明</a></div><div class="soon-grid">' +
       SOON.map(function (item) {
         return '<a class="card soon-card" href="#/soon"><span class="badge">即将推出</span><b>' + esc(item[0]) + "</b></a>";
       }).join("") + "</div></section>";
     return shell(
       '<section class="card hero">' +
-        "<h1>先选题，再生成文案</h1>" +
-        '<p class="lead">写下领域、受众、关键词，或一个粗略想法。免费文本模型会给出几个选题。你选一个，接着生成标题、正文和话题。导出前必须你自己审核。</p>' +
-        '<div class="brief">' +
-          '<input class="field" id="niche" maxlength="40" placeholder="领域，例如租房厨房" aria-label="领域" value="' + esc(state.brief.niche) + '">' +
-          '<input class="field" id="audience" maxlength="40" placeholder="受众，例如独居上班族" aria-label="受众" value="' + esc(state.brief.audience) + '">' +
-          '<input class="field" id="keywords" maxlength="80" placeholder="关键词，例如收纳、小空间" aria-label="关键词" value="' + esc(state.brief.keywords) + '">' +
-          '<textarea id="idea" maxlength="200" placeholder="或者直接写一个粗略想法" aria-label="粗略想法">' + esc(state.brief.idea) + "</textarea>" +
-        "</div>" +
-        '<div class="actions"><button class="btn primary" type="button" data-action="suggest">推荐选题</button><button class="btn" type="button" data-action="suggest-fixture">使用示例选题</button></div>' +
-        topicCards() +
-        '<h2 class="subhead">我已经有选题</h2>' +
-        '<form id="composer" class="known">' +
-          '<input class="field" id="topic" name="topic" maxlength="240" placeholder="例如：一周便当不重样" aria-label="选题" value="' + esc(state.composerTopic) + '">' +
-          stepper("composerCount", state.composerCount) +
-          '<div class="actions"><button class="btn primary" type="submit">创建并生成文案</button><button class="btn" type="button" data-action="create-only">只创建任务</button></div>' +
+        "<h1>先建一个项目</h1>" +
+        '<p class="lead">把产品说明、参考笔记和链接放进项目。之后的选题、文案和任务都在这个项目里。推荐选题仍用免费文本模型，并会读这些资料。没有资料时，也可以只按关键词选题。</p>' +
+        '<form id="project-form" class="brief">' +
+          '<input class="field" id="new-name" maxlength="40" placeholder="项目名称，例如春季护肤" aria-label="项目名称" value="' + esc(form.name) + '">' +
+          '<input class="field" id="new-positioning" maxlength="80" placeholder="定位，可选" aria-label="定位" value="' + esc(form.positioning) + '">' +
+          '<input class="field" id="new-niche" maxlength="40" placeholder="领域，可选" aria-label="领域" value="' + esc(form.niche) + '">' +
+          '<input class="field" id="new-audience" maxlength="40" placeholder="受众，可选" aria-label="受众" value="' + esc(form.audience) + '">' +
+          '<textarea id="new-notes" maxlength="1000" placeholder="补充说明，可选" aria-label="补充说明">' + esc(form.notes) + "</textarea>" +
+          '<div class="actions"><button class="btn primary" type="submit">创建项目</button></div>' +
         "</form>" +
-        '<p class="hint">生成文案会使用 1 次免费模型额度。标题不超过 20 字，正文不超过 1000 字，话题 3 到 6 个。没有密钥时可以用示例文案。</p>' +
       "</section>" +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
-      '<div class="filters">' + filters.map(function (key) {
-        return '<button type="button" data-action="filter" data-filter="' + key + '" class="' + (state.filter === key ? "on" : "") + '">' + names[key] + "</button>";
-      }).join("") + "</div>" + list + soon
+      '<div class="row-head"><h2>' + (state.showArchived ? "已归档" : "项目") + '</h2><button class="btn" type="button" data-action="toggle-archived">' +
+      (state.showArchived ? "返回进行中的项目" : "查看已归档") + "</button></div>" +
+      '<div class="projects">' + ungrouped + cards + "</div>" + empty + soon
     );
+  }
+  function projectHtml() {
+    if (!state.project) {
+      return shell('<section class="card empty"><h2>没有打开这个项目</h2><p>' + esc(state.banner || "它可能已被删除。") + '</p><p><a class="btn" href="#/">返回项目列表</a></p></section>');
+    }
+    var project = state.project;
+    var ungrouped = !!project.ungrouped;
+    var head = ungrouped
+      ? "<h1>未分组</h1>" + '<p class="hint">这些任务还没有归到项目。这里没有项目资料，推荐选题只按你写下的关键词。</p>'
+      : '<input class="field" id="proj-name" maxlength="40" aria-label="项目名称" value="' + esc(project.name) + '">';
+    var meta = ungrouped ? "" :
+      '<div class="brief">' +
+        '<input class="field" id="proj-positioning" maxlength="80" placeholder="定位，可选" aria-label="定位" value="' + esc(project.positioning || "") + '">' +
+        '<input class="field" id="proj-niche" maxlength="40" placeholder="领域，可选" aria-label="领域" value="' + esc(project.niche || "") + '">' +
+        '<input class="field" id="proj-audience" maxlength="40" placeholder="受众，可选" aria-label="受众" value="' + esc(project.audience || "") + '">' +
+        '<textarea id="proj-notes" maxlength="1000" placeholder="补充说明，可选" aria-label="补充说明">' + esc(project.notes || "") + "</textarea>" +
+      "</div>" +
+      '<div class="actions"><button class="btn primary" type="button" data-action="save-project">保存修改</button>' +
+      '<button class="btn" type="button" data-action="archive-project">' + (project.archived ? "取消归档" : "归档") + "</button>" +
+      '<button class="btn" type="button" data-action="delete-project">删除项目</button></div>';
+    var confirm = "";
+    if (state.confirmArchive) confirm += '<div class="banner">归档后项目从默认列表收起，资料和任务都还在。再点一次确认归档。</div>';
+    if (state.confirmDeleteProject) confirm += '<div class="banner bad">删除项目会去掉资料。里面的任务会回到未分组，任务本身还在。再点一次确认删除。</div>';
+    return shell(
+      '<div class="page-head"><div><a href="#/">← 全部项目</a>' + head + meta + "</div></div>" +
+      (project.archived ? '<div class="banner">这个项目已归档，不会出现在默认列表里。</div>' : "") +
+      (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
+      confirm +
+      materialsHtml(project) +
+      topicFlowHtml(project) +
+      jobFilters()
+    );
+  }
+  function materialsHtml(project) {
+    if (project.ungrouped) {
+      return '<section class="card block"><h2>项目资料</h2><p class="hint">未分组没有资料。要让选题读到产品说明，请先创建项目并把资料放进去。</p></section>';
+    }
+    var list = state.materials.length ? '<div class="materials">' + state.materials.map(function (item) {
+      var kind = item.kind === "link" ? "链接" : item.kind === "file" ? "文件" : "文字";
+      var extra = item.url ? '<p><a href="' + esc(item.url) + '" rel="noreferrer" target="_blank">' + esc(item.url) + "</a></p>" : "";
+      var file = item.downloadUrl ? '<p><a href="' + esc(item.downloadUrl) + '">查看文件</a></p>' : "";
+      return '<article class="card material"><span class="kind">' + kind + "</span><div><h3>" + esc(item.title || "未命名") + "</h3>" +
+        (item.body ? "<p>" + esc(item.body) + "</p>" : "") + extra + file + "</div>" +
+        '<button class="btn" type="button" data-action="delete-material" data-id="' + esc(item.id) + '">移除</button></article>';
+    }).join("") + "</div>" : '<p class="hint">还没有资料。可以贴一段说明、上传文本或图片，或记一个链接。没有资料时，仍可以按关键词推荐选题。</p>';
+    return '<section class="card block"><h2>项目资料</h2>' +
+      '<p class="hint">文字、文件和链接会在推荐选题和生成文案时交给免费文本模型。这里不抓取小红书或抖音，也不会把链接正文抓下来。</p>' +
+      list +
+      '<div class="split">' +
+        '<div><label class="lbl" for="note-body">文字资料</label><input class="field" id="note-title" maxlength="80" placeholder="标题，可选" aria-label="文字资料标题">' +
+        '<textarea id="note-body" maxlength="20000" placeholder="贴上产品说明、卖点或参考笔记" aria-label="文字资料"></textarea>' +
+        '<div class="actions"><button class="btn" type="button" data-action="add-note">添加文字</button></div></div>' +
+        '<div><label class="lbl" for="link-url">链接</label><input class="field" id="link-url" maxlength="500" placeholder="https://example.com/brief" aria-label="链接">' +
+        '<input class="field" id="link-title" maxlength="80" placeholder="标题，可选。不填就尝试读取网页标题" aria-label="链接标题">' +
+        '<input class="field" id="link-note" maxlength="2000" placeholder="你想让模型记住的备注" aria-label="链接备注">' +
+        '<div class="actions"><button class="btn" type="button" data-action="add-link">添加链接</button></div>' +
+        '<label class="lbl" for="material-file">文件</label><input class="field" id="file-title" maxlength="80" placeholder="文件标题，可选" aria-label="文件标题">' +
+        '<div class="actions"><label class="btn">上传资料<input id="material-file" type="file" accept=".txt,.md,.markdown,.csv,.pdf,text/plain,text/markdown,text/csv,application/pdf,image/png,image/jpeg,image/webp,image/gif" hidden></label></div>' +
+        '<p class="hint">文本、Markdown、CSV、PDF 和常见图片。单个不超过 4MB。PDF 不抽取正文，图片模型也看不到画面，请把要点写在标题或文字资料里。</p></div>' +
+      "</div></section>";
+  }
+  function topicFlowHtml(project) {
+    return '<section class="card hero"><h2 class="subhead">先选题，再生成文案</h2>' +
+      '<p class="hint">' + esc(materialHint(project)) + "</p>" +
+      '<div class="brief">' +
+        '<input class="field" id="niche" maxlength="40" placeholder="领域，例如租房厨房" aria-label="领域" value="' + esc(state.brief.niche) + '">' +
+        '<input class="field" id="audience" maxlength="40" placeholder="受众，例如独居上班族" aria-label="受众" value="' + esc(state.brief.audience) + '">' +
+        '<input class="field" id="keywords" maxlength="80" placeholder="关键词，例如收纳、小空间" aria-label="关键词" value="' + esc(state.brief.keywords) + '">' +
+        '<textarea id="idea" maxlength="200" placeholder="或者直接写一个粗略想法" aria-label="粗略想法">' + esc(state.brief.idea) + "</textarea>" +
+      "</div>" +
+      '<div class="actions"><button class="btn primary" type="button" data-action="suggest">推荐选题</button><button class="btn" type="button" data-action="suggest-fixture">使用示例选题</button></div>' +
+      topicCards() +
+      '<h2 class="subhead">我已经有选题</h2>' +
+      '<form id="composer" class="known">' +
+        '<input class="field" id="topic" name="topic" maxlength="240" placeholder="例如：一周便当不重样" aria-label="选题" value="' + esc(state.composerTopic) + '">' +
+        stepper("composerCount", state.composerCount) +
+        '<div class="actions"><button class="btn primary" type="submit">创建并生成文案</button><button class="btn" type="button" data-action="create-only">只创建任务</button></div>' +
+      "</form>" +
+      '<p class="hint">生成文案会使用 1 次免费模型额度。标题不超过 20 字，正文不超过 1000 字，话题 3 到 6 个。没有密钥时可以用示例文案。</p></section>';
+  }
+  function materialHint(project) {
+    if (!project || project.ungrouped) return "未分组没有项目资料。推荐选题只按你写下的领域、受众、关键词或想法。";
+    if (!state.materials.length) return "这个项目还没有资料。你仍可以按关键词推荐选题，和以前一样。";
+    return "推荐选题会读这个项目的 " + state.materials.length + " 份资料，不会另外抓取网页或热榜。";
+  }
+  function jobFilters() {
+    var filters = ["all", "draft", "pending_review", "approved", "rejected", "exported"];
+    var names = { all: "全部" };
+    Object.keys(STATUS).forEach(function (key) { names[key] = STATUS[key]; });
+    var jobs = state.jobs.filter(function (job) { return state.filter === "all" || job.status === state.filter; });
+    var list = jobs.length ? '<div class="jobs">' + jobs.map(jobCard).join("") + "</div>" : emptyJobs();
+    return '<div class="filters">' + filters.map(function (key) {
+      return '<button type="button" data-action="filter" data-filter="' + key + '" class="' + (state.filter === key ? "on" : "") + '">' + names[key] + "</button>";
+    }).join("") + "</div>" + list;
   }
   function topicCards() {
     if (!state.topics.length && !state.topicNote) return "";
@@ -547,7 +739,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         '<div class="actions"><button class="btn primary" type="button" data-action="use-topic" data-index="' + index + '" data-copy="1">用这个选题并生成文案</button>' +
         '<button class="btn" type="button" data-action="use-topic" data-index="' + index + '" data-copy="0">只用这个选题</button></div></article>';
     }).join("");
-    return note + (label ? '<p class="hint">' + esc(label) + "</p>" : "") + (cards ? '<div class="topics">' + cards + "</div>" : "");
+    return '<div id="topic-results">' + note + (label ? '<p class="hint">' + esc(label) + "</p>" : "") + (cards ? '<div class="topics">' + cards + "</div>" : "") + "</div>";
   }
   function headline(job) {
     var source = job.title || String(job.topic || "").split("。")[0];
@@ -564,10 +756,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       '<div class="when">' + esc(when(job.createdAt)) + "</div></a>";
   }
   function emptyJobs() {
+    var scoped = state.project && !state.project.ungrouped;
     var text = state.filter === "all"
-      ? "还没有任务。写下一个想发的主题，例如「租房厨房的收纳」。文案、图片、审核和导出都在这一页完成。"
+      ? (scoped ? "这个项目里还没有任务。先推荐选题，或直接写一个选题。" : "还没有未分组的任务。新任务会进到你打开的项目里。")
       : "这个状态下还没有任务。";
-    return '<section class="card empty"><div class="note-art"></div><h2>' + (state.filter === "all" ? "工作台是空的" : "没有符合的任务") + "</h2><p>" + text + "</p></section>";
+    return '<section class="card empty"><div class="note-art"></div><h2>' + (state.filter === "all" ? "这里还没有任务" : "没有符合的任务") + "</h2><p>" + text + "</p></section>";
   }
   function stepper(name, value) {
     return '<div class="stepper"><button type="button" data-action="count" data-count="' + name + '" data-dir="-1" aria-label="减少图片">−</button><b>' + value + ' 张</b><button type="button" data-action="count" data-count="' + name + '" data-dir="1" aria-label="增加图片">+</button></div>';
@@ -580,7 +773,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     var job = state.job;
     var locked = job.status === "exported";
     return shell(
-      '<div class="page-head"><input type="hidden" id="job-id" value="' + esc(job.id) + '"><div><a href="#/">← 工作台</a><h1>' + esc(headline(job)) + "</h1>" +
+      '<div class="page-head"><input type="hidden" id="job-id" value="' + esc(job.id) + '"><div><a href="' + (job.projectId ? "#/projects/" + esc(job.projectId) : "#/projects/ungrouped") + '">← ' + esc(job.projectName || "未分组") + '</a><h1>' + esc(headline(job)) + "</h1>" +
       '<p class="hint">选题：' + esc(job.topic) + "</p>" + stepsHtml(job) + "</div>" +
       '<div class="actions"><span class="pill ' + esc(job.status) + '">' + esc(STATUS[job.status] || job.status) + '</span><button class="btn" type="button" data-action="duplicate">复制为新任务</button></div></div>' +
       '<div class="mobile-tabs"><button type="button" class="btn ' + (state.mobilePane === "edit" ? "on" : "") + '" data-action="pane" data-pane="edit">编辑</button><button type="button" class="btn ' + (state.mobilePane === "preview" ? "on" : "") + '" data-action="pane" data-pane="preview">预览</button></div>' +
@@ -610,10 +803,18 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       error = '<div class="banner">' + esc(state.copyError.message) + fallback + "</div>";
     }
     var model = !job.modelUsed ? "尚未生成文案" : (job.modelUsed === "fixture/local" ? "示例文案 · 未调用模型" : "文案模型 · " + job.modelUsed);
+    var materialLine = "";
+    if (job.projectId) {
+      materialLine = state.materials.length
+        ? '<p class="hint">生成文案会读项目「' + esc((state.project && state.project.name) || job.projectName || "当前项目") + "」的 " + state.materials.length + " 份资料。</p>"
+        : '<p class="hint">这个项目还没有资料。生成文案只按选题来写。</p>';
+    } else {
+      materialLine = '<p class="hint">这条任务在未分组，生成文案只按选题来写。</p>';
+    }
     var next = !locked && !job.title && !job.content
       ? '<div class="banner">下一步就在这里生成文案。标题不超过 20 字，正文不超过 1000 字，话题 3 到 6 个。导出前需要你自己审核。<div class="actions"><button class="btn primary" type="button" data-action="draft">生成文案</button><button class="btn" type="button" data-action="fixture">使用示例文案</button></div></div>'
       : "";
-    return '<section class="card block" id="copy-card"><div class="model"><b>' + esc(model) + '</b><span id="saved" class="hint"></span></div>' + next + fallbacks + error +
+    return '<section class="card block" id="copy-card"><div class="model"><b>' + esc(model) + '</b><span id="saved" class="hint"></span></div>' + materialLine + next + fallbacks + error +
       '<label class="lbl" for="title">标题 <span id="title-count" class="count">0/20</span></label>' +
       '<input class="field" id="title" maxlength="40" ' + (locked ? "readonly" : "") + ' aria-label="标题">' +
       '<label class="lbl" for="content">正文 <span id="content-count" class="count">0/1000</span></label>' +
@@ -757,6 +958,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     else if (state.route.view === "quota") app.innerHTML = quotaHtml();
     else if (state.route.view === "soon") app.innerHTML = soonHtml();
     else if (state.route.view === "job") app.innerHTML = jobHtml();
+    else if (state.route.view === "project") app.innerHTML = projectHtml();
     else app.innerHTML = boardHtml();
     afterRender();
   }
@@ -779,6 +981,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     updatePreview();
     var pass = document.getElementById("pass");
     if (pass) pass.focus();
+    if (state.scrollToTopics) {
+      state.scrollToTopics = false;
+      var topics = document.getElementById("topic-results");
+      if (topics) topics.scrollIntoView({ block: "start" });
+    }
   }
   function renderChips() {
     var box = document.getElementById("chips");
@@ -869,22 +1076,31 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       idea: state.brief.idea.trim()
     };
   }
+  function projectGrounded() {
+    var project = state.project;
+    if (!project || project.ungrouped) return false;
+    return state.materials.length > 0 || !!(project.notes || project.positioning || project.niche || project.audience);
+  }
   function suggestTopics(fixture) {
     var brief = currentBrief();
-    if (!brief.niche && !brief.audience && !brief.keywords && !brief.idea) {
+    if (!brief.niche && !brief.audience && !brief.keywords && !brief.idea && !projectGrounded()) {
       state.topicNote = "请先写领域、受众、关键词，或一个粗略想法";
       state.topics = [];
+      state.scrollToTopics = true;
       render();
       return;
     }
+    var payload = Object.assign({ count: 6, fixture: !!fixture }, brief);
+    if (state.project && !state.project.ungrouped) payload.projectId = state.project.id;
     setBusy(true);
-    api("/topics", { method: "POST", json: Object.assign({ count: 6, fixture: !!fixture }, brief) }).then(function (data) {
+    api("/topics", { method: "POST", json: payload }).then(function (data) {
       state.topics = data.topics || [];
       state.topicsFixture = !!data.fixture;
       state.topicsModel = data.modelUsed && data.modelUsed !== "fixture/local" ? data.modelUsed : "";
-      state.topicNote = data.fixture
+      var tail = data.fixture
         ? "这些是示例选题，没有调用模型，也不是小红书热榜。选一个之后可以生成文案。"
         : "选一个选题，然后生成文案。生成文案会再使用 1 次免费模型额度。";
+      state.topicNote = data.materialNote ? data.materialNote + tail : tail;
       state.banner = "";
       return api("/quota").then(function (quota) { state.quota = quota; }, function () { return null; });
     }).catch(function (err) {
@@ -892,7 +1108,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       state.topicsFixture = false;
       state.topicsModel = "";
       state.topicNote = err.message;
-    }).finally(function () { setBusy(false); render(); });
+    }).finally(function () { setBusy(false); state.scrollToTopics = true; render(); });
   }
   function chosenTopic(index) {
     var card = state.topics[index];
@@ -911,7 +1127,9 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   }
   function openDraft(topic, withCopy) {
     setBusy(true);
-    api("/jobs", { method: "POST", json: { topic: topic } }).then(function (data) {
+    var payload = { topic: topic };
+    if (state.project && !state.project.ungrouped) payload.projectId = state.project.id;
+    api("/jobs", { method: "POST", json: payload }).then(function (data) {
       sessionStorage.setItem("wowacool-count", String(state.composerCount));
       if (!withCopy) {
         location.hash = "#/jobs/" + data.job.id;
@@ -961,7 +1179,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     }).then(function (data) {
       state.job = data.job;
       state.tags = String(data.job.tags || "").split(",").map(function (tag) { return tag.trim(); }).filter(Boolean);
-      toast(fixture ? "已填入示例文案" : "文案已生成");
+      var base = fixture ? "已填入示例文案" : "文案已生成";
+      toast(data.materialNote ? base + "。" + data.materialNote : base);
       render({ fresh: true });
     }).catch(function (err) {
       state.copyError = { message: err.message, code: err.code };
@@ -1078,6 +1297,193 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     }).finally(function () { setBusy(false); });
   }
 
+  function captureProjectForm() {
+    var name = document.getElementById("new-name");
+    if (!name) return;
+    state.projectForm = {
+      name: name.value,
+      positioning: valueOf("new-positioning"),
+      niche: valueOf("new-niche"),
+      audience: valueOf("new-audience"),
+      notes: valueOf("new-notes")
+    };
+  }
+  function captureProjectDraft() {
+    var name = document.getElementById("proj-name");
+    if (!name || !state.project || state.project.ungrouped) return;
+    state.project.name = name.value;
+    state.project.positioning = valueOf("proj-positioning");
+    state.project.niche = valueOf("proj-niche");
+    state.project.audience = valueOf("proj-audience");
+    state.project.notes = valueOf("proj-notes");
+  }
+  function valueOf(id) {
+    var el = document.getElementById(id);
+    return el ? el.value : "";
+  }
+  function createProject(event) {
+    event.preventDefault();
+    if (state.busy) return;
+    captureProjectForm();
+    if (!state.projectForm.name.trim()) { state.banner = "请先写项目名称"; render(); return; }
+    setBusy(true);
+    api("/projects", { method: "POST", json: {
+      name: state.projectForm.name.trim(),
+      positioning: state.projectForm.positioning.trim(),
+      niche: state.projectForm.niche.trim(),
+      audience: state.projectForm.audience.trim(),
+      notes: state.projectForm.notes.trim()
+    } }).then(function (data) {
+      state.projectForm = { name: "", positioning: "", niche: "", audience: "", notes: "" };
+      location.hash = "#/projects/" + data.project.id;
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function saveProject() {
+    if (!state.project || state.project.ungrouped) return;
+    captureProjectDraft();
+    setBusy(true);
+    api("/projects/" + state.project.id, { method: "PATCH", json: {
+      name: state.project.name.trim(),
+      positioning: state.project.positioning.trim(),
+      niche: state.project.niche.trim(),
+      audience: state.project.audience.trim(),
+      notes: state.project.notes.trim()
+    } }).then(function (data) {
+      state.project = data.project;
+      state.materials = data.materials || state.materials;
+      toast("项目已保存");
+      render();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function archiveProject() {
+    if (!state.project || state.project.ungrouped) return;
+    if (state.project.archived) {
+      setBusy(true);
+      api("/projects/" + state.project.id, { method: "PATCH", json: { archived: false } }).then(function (data) {
+        state.project = data.project;
+        toast("已取消归档");
+        render();
+      }).catch(function (err) {
+        state.banner = err.message;
+        render();
+      }).finally(function () { setBusy(false); });
+      return;
+    }
+    if (!state.confirmArchive) { state.confirmArchive = true; render(); return; }
+    setBusy(true);
+    api("/projects/" + state.project.id, { method: "PATCH", json: { archived: true } }).then(function () {
+      state.confirmArchive = false;
+      location.hash = "#/";
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function deleteCurrentProject() {
+    if (!state.project || state.project.ungrouped) return;
+    if (!state.confirmDeleteProject) { state.confirmDeleteProject = true; render(); return; }
+    setBusy(true);
+    api("/projects/" + state.project.id, { method: "DELETE" }).then(function () {
+      state.confirmDeleteProject = false;
+      location.hash = "#/";
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function refreshMaterials() {
+    if (!state.project || state.project.ungrouped) return Promise.resolve();
+    captureProjectDraft();
+    var draft = {
+      name: state.project.name,
+      positioning: state.project.positioning,
+      niche: state.project.niche,
+      audience: state.project.audience,
+      notes: state.project.notes
+    };
+    return api("/projects/" + state.project.id).then(function (data) {
+      state.project = data.project;
+      state.project.name = draft.name;
+      state.project.positioning = draft.positioning;
+      state.project.niche = draft.niche;
+      state.project.audience = draft.audience;
+      state.project.notes = draft.notes;
+      state.materials = data.materials || [];
+      return api("/jobs?projectId=" + encodeURIComponent(state.project.id));
+    }).then(function (data) {
+      state.jobs = data.jobs || [];
+      render();
+    });
+  }
+  function addNote() {
+    if (!state.project || state.project.ungrouped) return;
+    var body = valueOf("note-body").trim();
+    if (!body) { state.banner = "请先贴上文字资料"; render(); return; }
+    setBusy(true);
+    api("/projects/" + state.project.id + "/materials", { method: "POST", json: { kind: "note", title: valueOf("note-title").trim(), body: body } }).then(function () {
+      state.banner = "";
+      toast("文字资料已添加");
+      return refreshMaterials();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function addLink() {
+    if (!state.project || state.project.ungrouped) return;
+    var url = valueOf("link-url").trim();
+    if (!url) { state.banner = "请填写链接"; render(); return; }
+    setBusy(true);
+    api("/projects/" + state.project.id + "/materials", { method: "POST", json: { kind: "link", url: url, title: valueOf("link-title").trim(), body: valueOf("link-note").trim() } }).then(function (data) {
+      state.banner = "";
+      toast(data.titleFetched ? "已保存链接，并读到标题" : "已保存链接");
+      return refreshMaterials();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function uploadMaterial(fileList) {
+    var files = Array.prototype.slice.call(fileList || []);
+    var file = files[0];
+    if (!file || !state.project || state.project.ungrouped) return;
+    var form = new FormData();
+    form.append("file", file);
+    var title = valueOf("file-title").trim();
+    if (title) form.append("title", title);
+    setBusy(true);
+    fetch("/projects/" + state.project.id + "/materials", { method: "POST", body: form }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok || data.ok === false) throw Object.assign(new Error(data.error || "上传失败"), { code: data.code });
+        return data;
+      });
+    }).then(function () {
+      state.banner = "";
+      toast("资料已上传");
+      return refreshMaterials();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function deleteMaterial(id) {
+    if (!state.project || !id) return;
+    setBusy(true);
+    api("/projects/" + state.project.id + "/materials/" + id, { method: "DELETE" }).then(function () {
+      toast("资料已移除");
+      return refreshMaterials();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+
   document.addEventListener("click", function (event) {
     var btn = event.target.closest("[data-action]");
     if (!btn || state.busy) return;
@@ -1119,6 +1525,13 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (action === "reject") review("rejected");
     if (action === "export") exportJob();
     if (action === "duplicate") duplicate();
+    if (action === "toggle-archived") { state.showArchived = !state.showArchived; loadBoard(); }
+    if (action === "save-project") saveProject();
+    if (action === "archive-project") archiveProject();
+    if (action === "delete-project") deleteCurrentProject();
+    if (action === "add-note") addNote();
+    if (action === "add-link") addLink();
+    if (action === "delete-material") deleteMaterial(btn.getAttribute("data-id"));
     if (action === "copy-payload" && state.job && state.job.postNote) {
       var text = JSON.stringify(state.job.postNote, null, 2);
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1137,6 +1550,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   });
   document.addEventListener("submit", function (event) {
     if (event.target && event.target.id === "composer") createTask(event, true);
+    if (event.target && event.target.id === "project-form") createProject(event);
     if (event.target && event.target.id === "unlock") unlock(event);
   });
   document.addEventListener("input", function (event) {
@@ -1147,6 +1561,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (target.id === "review-note") state.reviewNote = target.value;
     if (target.id === "topic") state.composerTopic = target.value;
     if (target.id === "niche" || target.id === "audience" || target.id === "keywords" || target.id === "idea") state.brief[target.id] = target.value;
+    if (target.id === "new-name" || target.id === "new-positioning" || target.id === "new-niche" || target.id === "new-audience" || target.id === "new-notes") captureProjectForm();
+    if (target.id === "proj-name" || target.id === "proj-positioning" || target.id === "proj-niche" || target.id === "proj-audience" || target.id === "proj-notes") captureProjectDraft();
     if (target.hasAttribute("data-topic-index")) {
       var topicIndex = Number(target.getAttribute("data-topic-index"));
       if (state.topics[topicIndex]) state.topics[topicIndex].title = target.value;
@@ -1156,6 +1572,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   });
   document.addEventListener("change", function (event) {
     if (event.target && event.target.id === "file") uploadFiles(event.target.files);
+    if (event.target && event.target.id === "material-file") uploadMaterial(event.target.files);
   });
   document.addEventListener("keydown", function (event) {
     if (event.target && event.target.id === "tag-input" && (event.key === "Enter" || event.key === "," || event.key === "，")) {

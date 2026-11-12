@@ -33,6 +33,18 @@ import {
   reviewResponse,
   uploadImagesResponse,
 } from "./handlers.js";
+import {
+  createMaterialResponse,
+  createProjectResponse,
+  deleteMaterialResponse,
+  deleteProjectResponse,
+  getMaterialResponse,
+  getProjectResponse,
+  listMaterialsResponse,
+  listProjectsResponse,
+  patchProjectResponse,
+} from "./projectHandlers.js";
+import { ensureProjectSchema } from "./schema.js";
 import { assertId, errorResponse, json } from "./http.js";
 import { renderApp } from "./ui.js";
 
@@ -49,6 +61,15 @@ const TABLE: Array<{ method: string; pattern: string; name: string }> = [
   { method: "GET", pattern: "/catalog", name: "catalog" },
   { method: "POST", pattern: "/catalog/refresh", name: "catalogRefresh" },
   { method: "POST", pattern: "/topics", name: "topics" },
+  { method: "GET", pattern: "/projects", name: "listProjects" },
+  { method: "POST", pattern: "/projects", name: "createProject" },
+  { method: "GET", pattern: "/projects/:id/materials", name: "listMaterials" },
+  { method: "POST", pattern: "/projects/:id/materials", name: "createMaterial" },
+  { method: "DELETE", pattern: "/projects/:id/materials/:materialId", name: "deleteMaterial" },
+  { method: "GET", pattern: "/projects/:id/materials/:materialId", name: "getMaterial" },
+  { method: "GET", pattern: "/projects/:id", name: "getProject" },
+  { method: "PATCH", pattern: "/projects/:id", name: "patchProject" },
+  { method: "DELETE", pattern: "/projects/:id", name: "deleteProject" },
   { method: "GET", pattern: "/jobs", name: "list" },
   { method: "POST", pattern: "/jobs", name: "create" },
   { method: "POST", pattern: "/jobs/:id/draft", name: "draft" },
@@ -100,9 +121,14 @@ export default {
 async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const hit = match(request.method, url.pathname);
   if (!hit) return json({ ok: false, error: "没有这个页面", code: "not_found" }, 404);
-  if (!PUBLIC.has(hit.name)) await assertUnlocked(request, env);
-  const id = hit.params.id ? assertId(hit.params.id, "任务") : "";
+  if (!PUBLIC.has(hit.name)) {
+    await assertUnlocked(request, env);
+    if (env.DB) await ensureProjectSchema(env.DB);
+  }
+  const idLabel = hit.name.includes("Project") || hit.name.includes("Material") ? "项目" : "任务";
+  const id = hit.params.id ? assertId(hit.params.id, idLabel) : "";
   const assetId = hit.params.assetId ? assertId(hit.params.assetId, "图片") : "";
+  const materialId = hit.params.materialId ? assertId(hit.params.materialId, "资料") : "";
 
   switch (hit.name) {
     case "health":
@@ -125,6 +151,24 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return refreshCatalogResponse(env);
     case "topics":
       return topicsResponse(request, env);
+    case "listProjects":
+      return listProjectsResponse(request, env);
+    case "createProject":
+      return createProjectResponse(request, env);
+    case "getProject":
+      return getProjectResponse(request, env, id);
+    case "patchProject":
+      return patchProjectResponse(request, env, id);
+    case "deleteProject":
+      return deleteProjectResponse(request, env, id);
+    case "listMaterials":
+      return listMaterialsResponse(request, env, id);
+    case "createMaterial":
+      return createMaterialResponse(request, env, id);
+    case "deleteMaterial":
+      return deleteMaterialResponse(request, env, id, materialId);
+    case "getMaterial":
+      return getMaterialResponse(request, env, id, materialId);
     case "list":
       return listJobsResponse(request, env);
     case "create":

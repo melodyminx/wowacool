@@ -37,6 +37,8 @@ export interface StoredJob {
   review?: { decision: "approved" | "rejected"; note?: string; at: string };
   modelUsed?: string;
   fallbacksOffered?: string[];
+  projectId: string | null;
+  projectName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +51,8 @@ export interface JobSummary {
   contentPreview: string;
   imageCount: number;
   modelUsed?: string;
+  projectId: string | null;
+  projectName: string | null;
   createdAt: string;
   updatedAt: string;
   coverUrl: string | null;
@@ -64,6 +68,8 @@ interface JobRow {
   image_count: number;
   model_used: string | null;
   review_note: string | null;
+  project_id: string | null;
+  project_name?: string | null;
   created_at: string;
   updated_at: string;
   cover_id?: string | null;
@@ -131,36 +137,49 @@ export function decideStatus(current: JobStatus, complete: boolean): JobStatus {
   return complete ? "pending_review" : "draft";
 }
 
-export async function createJob(db: D1Database, topic: string): Promise<StoredJob> {
+export async function createJob(db: D1Database, topic: string, projectId: string | null = null): Promise<StoredJob> {
   const id = newId("job");
   const now = nowIso();
   await db.batch([
     db
       .prepare(
-        `INSERT INTO jobs (id, topic, status, title, content, tags, image_count, model_used, review_note, created_at, updated_at)
-         VALUES (?, ?, 'draft', '', '', '', 0, NULL, NULL, ?, ?)`,
+        `INSERT INTO jobs (id, topic, status, title, content, tags, image_count, model_used, review_note, project_id, created_at, updated_at)
+         VALUES (?, ?, 'draft', '', '', '', 0, NULL, NULL, ?, ?, ?)`,
       )
-      .bind(id, topic, now, now),
-    auditStmt(db, id, "created", { topic }, now),
+      .bind(id, topic, projectId, now, now),
+    auditStmt(db, id, "created", { topic, projectId }, now),
   ]);
   return mustGet(db, id);
 }
 
-export async function listJobs(db: D1Database): Promise<JobSummary[]> {
-  const rows = await db
-    .prepare(
-      `SELECT j.id, j.topic, j.status, j.title, j.content, j.image_count, j.model_used, j.created_at, j.updated_at,
-        (
-          SELECT a.id FROM assets a
-          WHERE a.job_id = j.id AND a.${IMAGE_KIND_SQL}
-          ORDER BY a.sort_order ASC, a.created_at ASC
-          LIMIT 1
-        ) AS cover_id
-       FROM jobs j
-       ORDER BY j.created_at DESC
-       LIMIT 100`,
-    )
-    .all<JobRow>();
+export async function listJobs(
+  db: D1Database,
+  scope?: { projectId?: string; unassigned?: boolean },
+): Promise<JobSummary[]> {
+  const filters: string[] = [];
+  const params: string[] = [];
+  if (scope?.unassigned) filters.push("j.project_id IS NULL");
+  else if (scope?.projectId) {
+    filters.push("j.project_id = ?");
+    params.push(scope.projectId);
+  }
+  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  const statement = db.prepare(
+    `SELECT j.id, j.topic, j.status, j.title, j.content, j.image_count, j.model_used, j.project_id, p.name AS project_name,
+      j.created_at, j.updated_at,
+      (
+        SELECT a.id FROM assets a
+        WHERE a.job_id = j.id AND a.${IMAGE_KIND_SQL}
+        ORDER BY a.sort_order ASC, a.created_at ASC
+        LIMIT 1
+      ) AS cover_id
+     FROM jobs j
+     LEFT JOIN projects p ON p.id = j.project_id
+     ${where}
+     ORDER BY j.created_at DESC
+     LIMIT 100`,
+  );
+  const rows = params.length ? await statement.bind(...params).all<JobRow>() : await statement.all<JobRow>();
   return (rows.results ?? []).map((row) => ({
     id: row.id,
     topic: row.topic,
@@ -169,6 +188,8 @@ export async function listJobs(db: D1Database): Promise<JobSummary[]> {
     contentPreview: Array.from(row.content ?? "").slice(0, 72).join(""),
     imageCount: Number(row.image_count ?? 0),
     modelUsed: row.model_used ?? undefined,
+    projectId: row.project_id ?? null,
+    projectName: row.project_name ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     coverUrl: row.cover_id ? `/jobs/${row.id}/images/${row.cover_id}` : null,
@@ -178,8 +199,11 @@ export async function listJobs(db: D1Database): Promise<JobSummary[]> {
 export async function getJob(db: D1Database, id: string): Promise<StoredJob | null> {
   const row = await db
     .prepare(
-      `SELECT id, topic, status, title, content, tags, image_count, model_used, review_note, created_at, updated_at
-       FROM jobs WHERE id = ?`,
+      `SELECT j.id, j.topic, j.status, j.title, j.content, j.tags, j.image_count, j.model_used, j.review_note,
+        j.project_id, p.name AS project_name, j.created_at, j.updated_at
+       FROM jobs j
+       LEFT JOIN projects p ON p.id = j.project_id
+       WHERE j.id = ?`,
     )
     .bind(id)
     .first<JobRow>();
@@ -405,10 +429,22 @@ export async function duplicateJob(db: D1Database, bucket: R2Bucket, job: Stored
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
-        `INSERT INTO jobs (id, topic, status, title, content, tags, image_count, model_used, review_note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+        `INSERT INTO jobs (id, topic, status, title, content, tags, image_count, model_used, review_note, project_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       )
-      .bind(id, job.topic, status, job.title, job.content, job.tags, job.images.length, job.modelUsed ?? null, now, now),
+      .bind(
+        id,
+        job.topic,
+        status,
+        job.title,
+        job.content,
+        job.tags,
+        job.images.length,
+        job.modelUsed ?? null,
+        job.projectId,
+        now,
+        now,
+      ),
   ];
   job.imagePrompts.forEach((prompt, index) => statements.push(promptStmt(db, id, prompt, index, now)));
   for (const [index, image] of job.images.entries()) {
@@ -623,6 +659,8 @@ function hydrate(row: JobRow, assets: AssetRow[], audits: AuditRow[]): StoredJob
         : undefined,
     modelUsed: row.model_used ?? undefined,
     fallbacksOffered: fallbacks,
+    projectId: row.project_id ?? null,
+    projectName: row.project_name ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

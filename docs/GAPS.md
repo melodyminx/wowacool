@@ -12,7 +12,8 @@
 
 - 代码在 GitHub 仓库 `wowacool`。推到 `main` 时 `.github/workflows/deploy.yml` 会用 Wrangler 部署 Worker `wowacool`。
 - 部署前需要在 GitHub Actions 设置仓库密钥 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID`。不要把这两个值写进仓库。
-- `GET /` 是运营工作台，`GET /health` 仍是 JSON。D1 与 R2 已绑定。`schema/d1.sql` 已应用到数据库 `wowacool`，本次没有新增列，部署前不用再跑 SQL。
+- `GET /` 是运营工作台，`GET /health` 仍是 JSON。D1 与 R2 已绑定。
+- 已有的数据库 `wowacool` 需要执行一次 `schema/migrations/0002_projects.sql`，给 `jobs` 加上可空的 `project_id`，并创建 `projects` / `materials`。Worker 若发现还没有这一列，会在第一次业务请求里补上同样的变更。`/health` 不触发这次补表。新库直接用 `schema/d1.sql`。
 - 队列保持未绑定。不要在配置里写账号 ID。
 
 ## 出图

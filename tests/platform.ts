@@ -105,9 +105,9 @@ async function toBytes(value: ArrayBuffer | ArrayBufferView | string | Blob): Pr
   return new Uint8Array(await value.arrayBuffer());
 }
 
-export function createTestEnv(extra: Record<string, unknown> = {}): Env {
+export function createTestEnv(extra: Record<string, unknown> = {}, options?: { schema?: string }): Env {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(fileURLToPath(new URL("../schema/d1.sql", import.meta.url)), "utf8"));
+  sqlite.exec(options?.schema ?? readFileSync(fileURLToPath(new URL("../schema/d1.sql", import.meta.url)), "utf8"));
   const db = new D1Shim(sqlite);
   const bucket = new R2Shim();
   return {

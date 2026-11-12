@@ -1,3 +1,5 @@
+import type { ProjectContext } from "./context.js";
+import { renderProjectContext } from "./context.js";
 import type { FreeModel, ModelRoute, QuotaSnapshot } from "../types.js";
 import type { OpenRouterClient } from "../openrouter/client.js";
 import { truncateChars } from "../util/text.js";
@@ -30,14 +32,22 @@ export const TOPIC_SYSTEM_PROMPT = `你是小红书图文选题编辑。只输�
 - why：为什么可能适合这个受众，不要编造阅读量、排名、热榜或官方数据
 - hook：可选的开头一句，不超过 40 个字；没有就空字符串
 - 内容健康、具体、可人工改写
-- 不要建议抓取小红书，不要建议自动发布，不要建议去评论别人的笔记`;
+- 不要建议抓取小红书，不要建议自动发布，不要建议去评论别人的笔记
+- 如果给了项目资料，选题必须贴着资料，不要把资料写成热榜、阅读量或官方排名
+- 图片资料只有文件名和说明，不要假装看过画面
+- 链接只是用户保存的书签，不要假设你打开过网页`;
 
-export function buildTopicUserPrompt(brief: TopicBrief, count: number): string {
-  return `请给出 ${count} 个小红书图文选题。
-领域：${brief.niche || "未指定"}
-受众：${brief.audience || "未指定"}
-关键词：${brief.keywords || "未指定"}
-粗略想法：${brief.idea || "未指定"}`;
+export function buildTopicUserPrompt(brief: TopicBrief, count: number, context?: ProjectContext | null): string {
+  const lines = [
+    `请给出 ${count} 个小红书图文选题。`,
+    `领域：${brief.niche || "未指定"}`,
+    `受众：${brief.audience || "未指定"}`,
+    `关键词：${brief.keywords || "未指定"}`,
+    `粗略想法：${brief.idea || "未指定"}`,
+  ];
+  if (!context) return lines.join("\n");
+  lines.push("", renderProjectContext(context), "选题要能对应到项目资料。资料没写的销量、排名和热度不要编。");
+  return lines.join("\n");
 }
 
 export function clampTopicCount(count: number | undefined): number {
@@ -52,6 +62,7 @@ export async function suggestTopics(options: {
   count?: number;
   catalog?: FreeModel[];
   quota?: QuotaSnapshot;
+  context?: ProjectContext | null;
 }): Promise<{ topics: TopicCandidate[]; modelUsed: string; fallbacksOffered: string[] }> {
   const count = clampTopicCount(options.count);
   const remaining = options.quota?.freeModelDailyRequests?.remaining;
@@ -62,7 +73,7 @@ export async function suggestTopics(options: {
     options.route,
     [
       { role: "system", content: TOPIC_SYSTEM_PROMPT },
-      { role: "user", content: buildTopicUserPrompt(options.brief, count) },
+      { role: "user", content: buildTopicUserPrompt(options.brief, count, options.context) },
     ],
     { catalog: options.catalog, dailyRemaining: remaining, temperature: 0.7 },
   );
@@ -106,11 +117,13 @@ export function parseTopicResponse(raw: string, count: number): TopicCandidate[]
   return topics;
 }
 
-/** 本地示例，不调用模型，也不假装来自热榜。 */
-export function fixtureTopics(brief: TopicBrief, count = 6): TopicCandidate[] {
+/** 本地示例，不调用模型，也不假装来自热榜。有项目资料时会把资料名称写进说明。 */
+export function fixtureTopics(brief: TopicBrief, count = 6, context?: ProjectContext | null): TopicCandidate[] {
   const total = clampTopicCount(count);
-  const focus = brief.niche || brief.idea || brief.keywords || "这件事";
-  const who = brief.audience || "同样在意这件事的人";
+  const material = context?.materials.find((item) => item.title.trim() || item.text.trim());
+  const materialLabel = material ? material.title.trim() || truncateChars(material.text.trim(), 18) : "";
+  const focus = brief.niche || brief.idea || brief.keywords || materialLabel || context?.name || "这件事";
+  const who = brief.audience || context?.audience || "同样在意这件事的人";
   const keyword = brief.keywords ? `关键词「${brief.keywords}」可以写进正文，但不要堆砌。` : "用具体物件代替空泛形容词。";
   const patterns: Array<[string, string, string, string]> = [
     ["先改一处", "从一个最小的动作讲起，而不是罗列完整攻略", `${who}更容易跟着做完，而不是只收藏。`, "先改一处就够了"],
@@ -125,7 +138,7 @@ export function fixtureTopics(brief: TopicBrief, count = 6): TopicCandidate[] {
   return patterns.slice(0, total).map(([suffix, angle, why, hook]) => ({
     title: truncateChars(`${focus}${suffix}`, TITLE_MAX),
     angle,
-    why,
+    why: materialLabel ? truncateChars(`资料「${truncateChars(materialLabel, 18)}」。${why}`, WHY_MAX) : why,
     hook,
   }));
 }

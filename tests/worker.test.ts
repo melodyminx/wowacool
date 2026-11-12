@@ -42,6 +42,9 @@ test("GET / serves the Chinese workbench instead of health JSON", async () => {
   assert.match(html, /示例文案/);
   assert.match(html, /推荐选题/);
   assert.match(html, /创建并生成文案/);
+  assert.match(html, /创建项目/);
+  assert.match(html, /项目资料/);
+  assert.match(html, /未分组/);
   assert.match(html, /不做视频生成或视频发布/);
   assert.doesNotMatch(html, /配图只用占位图/);
   assert.match(html, /viewport/);
