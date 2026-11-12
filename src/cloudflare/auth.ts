@@ -52,6 +52,26 @@ export async function assertUnlocked(request: Request, env: Env): Promise<void> 
   throw new HttpError(401, "请先输入访问口令", "locked");
 }
 
+/** Assistant ingest. Does not accept the workbench access token, and fails closed when unset. */
+export async function assertDataSourceToken(request: Request, env: Env): Promise<void> {
+  const expected = optionalSecret(env, "DATA_SOURCE_TOKEN");
+  if (!expected) {
+    throw new HttpError(
+      503,
+      "还没有配置 DATA_SOURCE_TOKEN，助手不能写入选题数据源。请在部署环境执行 npx wrangler secret put DATA_SOURCE_TOKEN。",
+      "missing_data_source_token",
+    );
+  }
+  const header = request.headers.get("authorization") ?? "";
+  const provided = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  if (!provided) {
+    throw new HttpError(401, "写入选题数据源需要 Authorization: Bearer 口令", "missing_data_source_token");
+  }
+  if (provided.length > 500 || !(await hashesEqual(provided, expected))) {
+    throw new HttpError(401, "数据源口令不正确", "bad_data_source_token");
+  }
+}
+
 async function requestUnlocked(request: Request, token: string): Promise<boolean> {
   const expected = await sha256(token);
   const header = request.headers.get("authorization");

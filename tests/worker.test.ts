@@ -50,6 +50,8 @@ test("GET / serves the Chinese workbench instead of health JSON", async () => {
   assert.match(html, /全部项目/);
   assert.match(html, /wowacool-project/);
   assert.match(html, /id="project-switcher"/);
+  assert.match(html, /选题数据源/);
+  assert.match(html, /添加数据源/);
   assert.match(html, /不做视频生成或视频发布/);
   assert.doesNotMatch(html, /配图只用占位图/);
   assert.match(html, /viewport/);

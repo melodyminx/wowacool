@@ -90,12 +90,17 @@ data/exports/<jobId>/
 | POST /projects | 创建项目。`{ name, positioning?, niche?, audience?, notes? }` |
 | GET /projects/:id | 项目详情和资料列表 |
 | PATCH /projects/:id | 改名、改说明，或 `{ "archived": true \| false }` |
-| DELETE /projects/:id | 删除项目和资料。任务保留，`projectId` 变为空 |
+| DELETE /projects/:id | 删除项目、资料和选题数据源。任务保留，`projectId` 变为空 |
 | GET /projects/:id/materials | 资料列表 |
 | POST /projects/:id/materials | 添加资料。JSON：`{ kind: "note" \| "link", title?, body?, url? }`。文件用 multipart 字段 `file`，可选 `title` / `note` |
 | GET /projects/:id/materials/:materialId | 文件下载；文字和链接返回 JSON |
 | DELETE /projects/:id/materials/:materialId | 删除一份资料 |
-| POST /topics | 推荐选题。`{ niche?, audience?, keywords?, idea?, count?, projectId? }`。带 `projectId` 时，免费文本模型会看到该项目的资料。`{ "fixture": true }` 返回示例选题，不调用模型 |
+| GET /projects/:id/data-sources | 选题数据源列表，含最近摘要。随工作台口令；未设置 `APP_ACCESS_TOKEN` 时和工作台一样可打开 |
+| POST /projects/:id/data-sources | 添加数据源。`{ "name": "ai产品发布评测" }`。同名返回 409。不收集写入口令 |
+| PATCH /projects/:id/data-sources/:sourceId | `{ "enabled": true \| false }`。停用后选题和文案不再读它 |
+| POST /projects/:id/data-sources/entries | 助手按名称写入一条摘要。必须带 `Authorization: Bearer`，口令是 Worker 密钥 `DATA_SOURCE_TOKEN`，不是工作台口令。未配置该密钥时返回 503，口令不对返回 401。即使没有设置 `APP_ACCESS_TOKEN`，这条写入也不对公众开放 |
+| POST /projects/:id/data-sources/:sourceId/entries | 同上，用数据源 id 而不是名称 |
+| POST /topics | 推荐选题。`{ niche?, audience?, keywords?, idea?, count?, projectId? }`。带 `projectId` 时，免费文本模型会看到该项目的资料和已启用选题数据源。`{ "fixture": true }` 返回示例选题，不调用模型 |
 | POST /jobs | 创建任务。选题可以带角度和钩子，最长 240 字。可选 `projectId` |
 | GET /jobs | 任务列表。`?projectId=` 只看一个项目，`?unassigned=1` 只看未分组 |
 | GET /jobs/:id | 任务详情 |
@@ -111,6 +116,20 @@ data/exports/<jobId>/
 | GET /jobs/:id/package | 下载 zip |
 | POST /jobs/:id/duplicate | 复制为一条需要重新审核的新任务 |
 
-任务 JSON 额外返回 `projectId` 和 `projectName`。没有项目时 `projectId` 为 `null`。选题和文案响应额外返回 `materialsUsed` 与 `materialNote`；没有项目时分别是 `0` 和 `null`，项目还没有资料时会说明这次只按关键词来写。
+任务 JSON 额外返回 `projectId` 和 `projectName`。没有项目时 `projectId` 为 `null`。选题和文案响应额外返回 `materialsUsed` 与 `materialNote`；没有项目时分别是 `0` 和 `null`，项目还没有资料时会说明这次只按关键词来写。已启用且有摘要的选题数据源会出现在 `materialNote` 里，并写进提示词，标明为助手写入的调研摘要。
 
-若设置了 Worker 密钥 `APP_ACCESS_TOKEN`，除 `/`、`/health`、`/favicon.svg` 和 `/session` 外都要先解锁。未设置时这些接口保持开放。
+助手写入摘要的 JSON：
+
+```json
+{
+  "sourceName": "ai产品发布评测",
+  "title": "本周发布摘要",
+  "body": "markdown 或纯文本",
+  "url": "https://example.com/note",
+  "collectedAt": "2026-11-12T08:00:00+08:00"
+}
+```
+
+`sourceName` 只在按名称写入时需要，数据源必须已经在项目里建好。`url` 和 `collectedAt` 可省略。按 id 写入时不要带 `sourceName`。请求头是 `Authorization: Bearer <DATA_SOURCE_TOKEN>` 和 `Content-Type: application/json`。不要把口令写进仓库或页面。
+
+若设置了 Worker 密钥 `APP_ACCESS_TOKEN`，除 `/`、`/health`、`/favicon.svg` 和 `/session` 外，工作台接口都要先解锁。选题数据源的写入不使用这个口令，只认 `DATA_SOURCE_TOKEN`。未设置 `APP_ACCESS_TOKEN` 时，工作台接口保持开放，写入接口仍然关闭。

@@ -12,6 +12,18 @@ export interface MaterialSnippet {
   mimeType?: string;
 }
 
+export interface SourceEntrySnippet {
+  title: string;
+  text: string;
+  url?: string;
+  collectedAt?: string;
+}
+
+export interface SourceSnippet {
+  name: string;
+  entries: SourceEntrySnippet[];
+}
+
 export interface ProjectContext {
   name: string;
   positioning: string;
@@ -19,15 +31,20 @@ export interface ProjectContext {
   audience: string;
   notes: string;
   materials: MaterialSnippet[];
+  /** Enabled assistant summaries only. Omitted when the project has no such sources. */
+  sources?: SourceSnippet[];
 }
 
 const MATERIAL_EXCERPT = 500;
 const CONTEXT_BUDGET = 2500;
+const SOURCE_BUDGET = 900;
+const SOURCE_EXCERPT = 360;
 
 export function contextCanStandAlone(context: ProjectContext | null): boolean {
   if (!context) return false;
   return Boolean(
     context.materials.length ||
+      hasSourceText(context) ||
       context.notes.trim() ||
       context.positioning.trim() ||
       context.niche.trim() ||
@@ -40,15 +57,23 @@ export function describeMaterialUse(context: ProjectContext | null): {
   materialNote: string | null;
 } {
   if (!context) return { materialsUsed: 0, materialNote: null };
-  if (!context.materials.length) {
+  const sources = enabledSourceCount(context);
+  if (!context.materials.length && !sources) {
     return {
       materialsUsed: 0,
       materialNote: "这个项目还没有资料。这次只按领域、受众、关键词或想法来写。",
     };
   }
+  if (!context.materials.length) {
+    return {
+      materialsUsed: 0,
+      materialNote: `已读 ${sources} 个已启用选题数据源里的助手调研摘要。这个项目还没有上传资料。`,
+    };
+  }
+  const sourceNote = sources ? `，以及 ${sources} 个已启用的选题数据源` : "";
   return {
     materialsUsed: context.materials.length,
-    materialNote: `已结合这个项目的 ${context.materials.length} 份资料。`,
+    materialNote: `已结合这个项目的 ${context.materials.length} 份资料${sourceNote}。`,
   };
 }
 
@@ -60,12 +85,16 @@ export function renderProjectContext(context: ProjectContext): string {
   if (context.niche.trim()) lines.push(`项目领域：${oneLine(context.niche)}`);
   if (context.audience.trim()) lines.push(`项目受众：${oneLine(context.audience)}`);
   if (context.notes.trim()) lines.push(`项目说明：${truncateChars(context.notes.trim(), MATERIAL_EXCERPT)}`);
-  if (!context.materials.length) {
+  const sourceText = hasSourceText(context);
+  if (!context.materials.length && !sourceText) {
     lines.push("这个项目还没有上传资料。不要假装读过产品文案、参考图或链接正文。");
     return lines.join("\n");
   }
+  if (!context.materials.length) {
+    lines.push("这个项目还没有上传资料。不要假装读过产品文案、参考图或链接正文。");
+  }
 
-  let budget = CONTEXT_BUDGET;
+  let budget = sourceText ? 1600 : CONTEXT_BUDGET;
   let omitted = 0;
   for (let index = 0; index < context.materials.length; index += 1) {
     const block = formatMaterial(context.materials[index], index);
@@ -82,6 +111,8 @@ export function renderProjectContext(context: ProjectContext): string {
     }
   }
   if (omitted > 0) lines.push(`其余 ${omitted} 份资料这次没有放进提示词。`);
+  const sources = renderSources(context.sources ?? []);
+  if (sources) lines.push("", sources);
   return lines.join("\n");
 }
 
@@ -100,6 +131,39 @@ function formatMaterial(material: MaterialSnippet, index: number): string {
   }
   if (material.text.trim()) lines.push(truncateChars(material.text.trim(), MATERIAL_EXCERPT));
   return lines.join("\n");
+}
+
+function renderSources(sources: SourceSnippet[]): string {
+  const usable = sources.filter((source) => source.entries.some((entry) => entry.title.trim() || entry.text.trim()));
+  if (!usable.length) return "";
+  const lines = ["助手写入的调研摘要（不是热榜，不是官方排名，也没有阅读量或热度）："];
+  let budget = SOURCE_BUDGET;
+  for (const source of usable) {
+    const head = `数据源「${oneLine(source.name) || "未命名"}」`;
+    if (countChars(head) > budget) break;
+    lines.push(head);
+    budget -= countChars(head);
+    for (const entry of source.entries) {
+      const title = oneLine(entry.title) || "未命名摘要";
+      const text = entry.text.trim() ? truncateChars(entry.text.trim(), SOURCE_EXCERPT) : "";
+      const block = [`- ${title}`, text, entry.url ? `链接：${oneLine(entry.url)}` : ""].filter(Boolean).join("\n");
+      if (countChars(block) > budget && budget < 40) break;
+      const fitted = countChars(block) <= budget ? block : truncateChars(block, Math.max(budget, 0));
+      lines.push(fitted);
+      budget -= countChars(fitted);
+      if (budget <= 0) break;
+    }
+    if (budget <= 0) break;
+  }
+  return lines.join("\n");
+}
+
+function hasSourceText(context: ProjectContext): boolean {
+  return enabledSourceCount(context) > 0;
+}
+
+function enabledSourceCount(context: ProjectContext): number {
+  return (context.sources ?? []).filter((source) => source.entries.some((entry) => entry.title.trim() || entry.text.trim())).length;
 }
 
 function oneLine(value: string): string {
