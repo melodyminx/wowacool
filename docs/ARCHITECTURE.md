@@ -10,9 +10,10 @@
 ## 本地主路径
 
 ```
-领域 / 受众 / 关键词或粗略想法
-  → OpenRouter 免费文本模型给出候选选题（也可直接写选题）
-  → 同一个免费文本路由生成文案（标题 ≤20 字，正文 ≤1000 字，话题 3–6 个）
+创建项目，放入文字 / 文件 / 链接资料
+  → 领域 / 受众 / 关键词或粗略想法（没有资料时仍可只按关键词）
+  → OpenRouter 免费文本模型结合项目资料给出候选选题（也可直接写选题）
+  → 同一个免费文本路由生成文案，也会读项目资料（标题 ≤20 字，正文 ≤1000 字，话题 3–6 个）
   → 文生图 Provider（工作台默认 Workers AI，1–18 张竖版 3:4；mock 需显式打开）
   → 状态变为 pending_review
   → 人工批准 / 驳回
@@ -28,7 +29,9 @@
 - `data/exports/<jobId>/`：可发布素材包
 - `data/logs/`：运行日志（自动脱敏）
 
-这套本地路径不依赖 Cloudflare。线上运营页走同一个领域函数，但把任务写到 D1、把图片和素材包写到 R2。Worker `wowacool`（`src/cloudflare/worker.ts`）在 `GET /` 返回工作台，在 `GET /health` 返回 JSON。表结构见 `schema/d1.sql`，现有库已经包含这些表，没有额外迁移。队列未启用，文案、出图、审核和导出都在当前请求里完成。
+这套本地路径不依赖 Cloudflare，也不包含项目层。线上运营页走同一个领域函数，但把项目和任务写到 D1、把资料文件、图片和素材包写到 R2。Worker `wowacool`（`src/cloudflare/worker.ts`）在 `GET /` 返回工作台，在 `GET /health` 返回 JSON。新库用 `schema/d1.sql`。已经在用的数据库 `wowacool` 需要再执行一次 `schema/migrations/0002_projects.sql`；Worker 发现 `jobs` 还没有 `project_id` 时也会补上同样的表和列。队列未启用，文案、出图、审核和导出都在当前请求里完成。
+
+项目在任务之上。一个项目有名称，以及可选的定位、领域、受众和说明。资料属于项目，不属于某一条任务：文字笔记、上传到 R2 的文本 / Markdown / CSV / PDF / 常见图片，以及用户保存的 http(s) 链接。链接只存 URL 和标题或备注；没写标题时可以读一次页面 `<title>`，不保存正文，也不抓取小红书或抖音。没有 `project_id` 的旧任务仍可打开，工作台把它们放在「未分组」。
 
 ## 免费模型路由
 
@@ -53,9 +56,10 @@
 
 | 本地 | 线上 |
 | --- | --- |
-| `data/jobs` | D1 `jobs` / `assets`，图片对象在 R2 |
+| 无对应目录 | D1 `projects` / `materials`，资料文件在 R2 `projects/<id>/materials/` |
+| `data/jobs` | D1 `jobs` / `assets`，`jobs.project_id` 可空，图片对象在 R2 |
 | `data/exports` | R2 `jobs/<id>/export/`，并提供 zip 下载 |
 | `data/catalog` | D1 `model_catalog` / `quota_snapshots` |
 | CLI 命令 | Worker 路由，在请求内执行 |
 
-D1 绑定 `DB`（数据库 `wowacool`）、R2 绑定 `ASSETS`（桶 `wowacool-assets`）和 Workers AI 绑定 `AI` 写在 `wrangler.toml`。没有新增表或列。队列仍注释。可选密钥 `APP_ACCESS_TOKEN` 不写进仓库；未设置时运营页公开可开。
+D1 绑定 `DB`（数据库 `wowacool`）、R2 绑定 `ASSETS`（桶 `wowacool-assets`）和 Workers AI 绑定 `AI` 写在 `wrangler.toml`。项目层新增 `projects`、`materials` 和可空的 `jobs.project_id`，不新增绑定。队列仍注释。可选密钥 `APP_ACCESS_TOKEN` 不写进仓库；未设置时运营页公开可开。

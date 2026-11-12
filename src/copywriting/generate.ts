@@ -1,6 +1,8 @@
 import { DEFAULT_IMAGE_COUNT, IMAGES_MAX, IMAGES_MIN, TITLE_MAX } from "../constants.js";
 import type { CopyDraft, FreeModel, ModelRoute, QuotaSnapshot } from "../types.js";
 import type { OpenRouterClient } from "../openrouter/client.js";
+import type { ProjectContext } from "./context.js";
+import { renderProjectContext } from "./context.js";
 import { normalizeCopy, validateCopy } from "./validate.js";
 import { truncateChars } from "../util/text.js";
 
@@ -10,11 +12,13 @@ const SYSTEM_PROMPT = `你是小红书图文笔记文案助手。只输出一个
 - content: 中文正文，不超过 1000 个字，口语化、可直接发布
 - tags: 3 到 6 个话题字符串数组，不要带 # 号
 - imagePrompts: 中文出图提示词数组，条数等于用户指定的图片数量，每条描述一张竖版 3:4 图片
-内容必须健康、实用、无误导。`;
+内容必须健康、实用、无误导。如果给了项目资料，文案要贴着资料，不要编造资料里没有的功效、销量或排名。图片资料看不到画面，链接不是网页正文。`;
 
-export function buildUserPrompt(topic: string, imageCount: number): string {
-  return `选题：${topic}
+export function buildUserPrompt(topic: string, imageCount: number, context?: ProjectContext | null): string {
+  const base = `选题：${topic}
 请为该选题写一篇小红书图文笔记文案，并给出 ${imageCount} 条出图提示词。`;
+  if (!context) return base;
+  return `${base}\n\n${renderProjectContext(context)}\n文案要贴着这些资料，不要编造资料里没有的功效、销量或排名。`;
 }
 
 export function parseCopyResponse(raw: string, fallbackTopic: string, imageCount: number): CopyDraft {
@@ -61,6 +65,7 @@ export async function generateCopy(options: {
   imageCount?: number;
   catalog?: FreeModel[];
   quota?: QuotaSnapshot;
+  context?: ProjectContext | null;
 }): Promise<{ draft: CopyDraft; modelUsed: string; fallbacksOffered: string[] }> {
   const imageCount = clampImageCount(options.imageCount ?? DEFAULT_IMAGE_COUNT);
   const remaining = options.quota?.freeModelDailyRequests?.remaining;
@@ -71,7 +76,7 @@ export async function generateCopy(options: {
     options.route,
     [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(options.topic, imageCount) },
+      { role: "user", content: buildUserPrompt(options.topic, imageCount, options.context) },
     ],
     {
       catalog: options.catalog,

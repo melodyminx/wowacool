@@ -4,7 +4,7 @@
 
 总管是「自动视频工作流」；本仓库只做小红书图文，暂不做视频、抖音、视频号。官方 `write_notes` 仍在规划中，本期只导出素材包，并约定如何唤起官方发布页 `xhs.postNote`，由用户自己点发布。不抓取浏览器登录态，不代发。
 
-线上工作台由同一个 Worker 提供：打开 `https://wowacool.melody6188.workers.dev/` 是中文运营页，`GET /health` 仍返回 JSON。任务存在 D1，图片和素材包存在 R2。本地 CLI 继续可用，数据仍在 `data/`。
+线上工作台由同一个 Worker 提供：打开 `https://wowacool.melody6188.workers.dev/` 是中文运营页，`GET /health` 仍返回 JSON。先建项目并放入资料，再在项目里推荐选题和创建任务。项目与任务存在 D1，资料文件、图片和素材包存在 R2。没有归到项目的旧任务显示在「未分组」。本地 CLI 继续可用，数据仍在 `data/`，不包含项目层。
 
 ## 如何本地跑
 
@@ -59,7 +59,13 @@ npm run cli -- run --topic "桌面整理小巧思" --images 3 --skip-llm --appro
 
 Worker 入口是 `src/cloudflare/worker.ts`，配置在 `wrangler.toml`。`GET /` 是运营页，`GET /health` 是 JSON，并写明当前出图 Provider。D1 `wowacool`、R2 `wowacool-assets` 和 Workers AI 绑定 `AI` 都在配置里。没有账号 ID 或 API token。队列保持注释，任务步骤在请求内完成。
 
-`schema/d1.sql` 已经应用到现有数据库，这次没有新增表或列，部署前不需要再执行 SQL。
+新数据库执行 `schema/d1.sql`。已经在跑的数据库 `wowacool` 需要再执行一次项目迁移（只跑一次；`project_id` 已经存在时，`ALTER TABLE` 会失败，那时跳过即可）：
+
+```bash
+npx wrangler d1 execute wowacool --remote --file=schema/migrations/0002_projects.sql
+```
+
+这次会新增 `projects`、`materials`，并给 `jobs` 增加可空的 `project_id`。旧任务保持 `NULL`，工作台里显示为「未分组」。Worker 在第一次业务请求时也会补上同样的变更，避免还没执行 SQL 时 `/jobs` 不可用。`GET /health` 不改。不要把账号 ID 或 token 写进命令记录。
 
 本地检查打包（不上传）：
 

@@ -1,4 +1,5 @@
 import { CONTENT_MAX, IMAGES_MAX, IMAGES_MIN, PREFERRED_FREE_MODEL, TITLE_MAX, TOPIC_MAX, WORKERS_AI_IMAGE_MODEL } from "../constants.js";
+import { contextCanStandAlone, describeMaterialUse, type ProjectContext } from "../copywriting/context.js";
 import { buildImagePrompts, fixtureCopy, generateCopy, resolveImageCount } from "../copywriting/generate.js";
 import { clampTopicCount, fixtureTopics, suggestTopics, type TopicBrief } from "../copywriting/topics.js";
 import { buildExportManifest, renderExportReadme, renderImagePrompts } from "../export/package.js";
@@ -16,7 +17,8 @@ import { redactSecrets } from "../util/env.js";
 import { nowIso } from "../util/id.js";
 import { countChars, normalizeTags } from "../util/text.js";
 import { accessToken, optionalSecret } from "./auth.js";
-import { HttpError, json, optionalString, readJson, requirePlatform } from "./http.js";
+import { HttpError, json, optionalString, readJson, requirePlatform, assertId } from "./http.js";
+import { getProject, loadProjectContext } from "./projects.js";
 import {
   addImages,
   createJob,
@@ -51,7 +53,11 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export async function listJobsResponse(request: Request, env: Env): Promise<Response> {
   const { db } = requirePlatform(env);
-  const jobs = await listJobs(db);
+  const url = new URL(request.url);
+  const unassigned = url.searchParams.get("unassigned") === "1";
+  const rawProject = url.searchParams.get("projectId");
+  const projectId = !unassigned && rawProject ? assertId(rawProject, "项目") : undefined;
+  const jobs = await listJobs(db, { unassigned, projectId });
   return json({ ok: true, jobs });
 }
 
@@ -61,7 +67,13 @@ export async function createJobResponse(request: Request, env: Env): Promise<Res
   const topic = typeof body.topic === "string" ? body.topic.trim() : "";
   if (!topic) throw new HttpError(400, "请先写一个选题", "missing_topic");
   if (countChars(topic) > TOPIC_MAX) throw new HttpError(400, `选题请控制在 ${TOPIC_MAX} 字以内`, "topic_too_long");
-  const job = await createJob(db, topic);
+  const projectId = readProjectId(body.projectId);
+  if (projectId) {
+    const project = await getProject(db, projectId);
+    if (!project) throw new HttpError(404, "找不到这个项目", "not_found");
+    if (project.archived) throw new HttpError(409, "这个项目已归档。先取消归档，再在里面创建任务。", "project_archived");
+  }
+  const job = await createJob(db, topic, projectId);
   return json({ ok: true, job: presentJob(job, originOf(request)) }, 201);
 }
 
@@ -125,11 +137,13 @@ export async function draftResponse(request: Request, env: Env, id: string): Pro
     typeof body.imageCount === "number" ? body.imageCount : undefined,
     job.imagePrompts.length || job.images.length || undefined,
   );
+  const context = await loadProjectContext(db, job.projectId);
+  const usage = describeMaterialUse(context);
   if (body.fixture === true) {
     const draft = fixtureCopy(job.topic, imageCount);
     await saveCopy(db, job, draft, { modelUsed: "fixture/local", fallbacks: [] });
     const next = await requireJob(db, id);
-    return json({ ok: true, job: presentJob(next, originOf(request)), fixture: true });
+    return json({ ok: true, job: presentJob(next, originOf(request)), fixture: true, ...usage });
   }
 
   try {
@@ -141,6 +155,7 @@ export async function draftResponse(request: Request, env: Env, id: string): Pro
       imageCount,
       catalog: prepared.models,
       quota: prepared.quota,
+      context,
     });
     await saveCopy(db, job, generated.draft, {
       modelUsed: generated.modelUsed,
@@ -151,21 +166,25 @@ export async function draftResponse(request: Request, env: Env, id: string): Pro
     throw copyFailure(error);
   }
   const next = await requireJob(db, id);
-  return json({ ok: true, job: presentJob(next, originOf(request)), fixture: false });
+  return json({ ok: true, job: presentJob(next, originOf(request)), fixture: false, ...usage });
 }
 
 export async function topicsResponse(request: Request, env: Env): Promise<Response> {
   const { db } = requirePlatform(env);
   const body = await readJson(request);
-  const brief = readBrief(body);
+  const grounded = await readTopicContext(db, body.projectId);
+  const brief = readBrief(body, contextCanStandAlone(grounded.context));
   const count = clampTopicCount(typeof body.count === "number" ? body.count : undefined);
+  const usage = describeMaterialUse(grounded.context);
   if (body.fixture === true) {
     return json({
       ok: true,
       fixture: true,
-      topics: fixtureTopics(brief, count),
+      topics: fixtureTopics(brief, count, grounded.context),
       modelUsed: "fixture/local",
       fallbacksOffered: [],
+      projectId: grounded.projectId,
+      ...usage,
     });
   }
   try {
@@ -177,6 +196,7 @@ export async function topicsResponse(request: Request, env: Env): Promise<Respon
       count,
       catalog: prepared.models,
       quota: prepared.quota,
+      context: grounded.context,
     });
     return json({
       ok: true,
@@ -184,6 +204,8 @@ export async function topicsResponse(request: Request, env: Env): Promise<Respon
       topics: suggested.topics,
       modelUsed: suggested.modelUsed,
       fallbacksOffered: suggested.fallbacksOffered,
+      projectId: grounded.projectId,
+      ...usage,
     });
   } catch (error) {
     if (error instanceof HttpError) throw error;
@@ -479,15 +501,32 @@ async function prepareFreeText(env: Env, db: D1Database, missingKey: string) {
   return { client, models, quota, route };
 }
 
-function readBrief(body: Record<string, unknown>): TopicBrief {
+function readBrief(body: Record<string, unknown>, allowEmpty = false): TopicBrief {
   const niche = optionalString(body.niche, 40, "领域")?.trim() ?? "";
   const audience = optionalString(body.audience, 40, "受众")?.trim() ?? "";
   const keywords = optionalString(body.keywords, 80, "关键词")?.trim() ?? "";
   const idea = optionalString(body.idea, 200, "想法")?.trim() ?? "";
-  if (!niche && !audience && !keywords && !idea) {
+  if (!allowEmpty && !niche && !audience && !keywords && !idea) {
     throw new HttpError(400, "请先写领域、受众、关键词，或一个粗略想法", "missing_brief");
   }
   return { niche, audience, keywords, idea };
+}
+
+function readProjectId(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") throw new HttpError(400, "项目不正确", "bad_id");
+  return assertId(value, "项目");
+}
+
+async function readTopicContext(
+  db: D1Database,
+  value: unknown,
+): Promise<{ projectId: string | null; context: ProjectContext | null }> {
+  const projectId = readProjectId(value);
+  if (!projectId) return { projectId: null, context: null };
+  const project = await getProject(db, projectId);
+  if (!project) throw new HttpError(404, "找不到这个项目", "not_found");
+  return { projectId, context: await loadProjectContext(db, projectId) };
 }
 
 function readRedrawIndex(value: unknown, imageCount: number): number | null {
@@ -618,6 +657,8 @@ function presentJob(job: StoredJob, origin: string) {
     modelUsed: job.modelUsed ?? null,
     fallbacksOffered: job.fallbacksOffered ?? [],
     review: job.review ?? null,
+    projectId: job.projectId,
+    projectName: job.projectName,
     postNote,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,

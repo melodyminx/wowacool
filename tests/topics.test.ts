@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/cloudflare/worker.js";
-import { fixtureTopics, parseTopicResponse } from "../src/copywriting/topics.js";
+import { buildTopicUserPrompt, fixtureTopics, parseTopicResponse } from "../src/copywriting/topics.js";
+import { buildUserPrompt } from "../src/copywriting/generate.js";
+import { renderProjectContext, type ProjectContext } from "../src/copywriting/context.js";
 import { createTestEnv } from "./platform.js";
 
 const ORIGIN = "https://wowacool.example";
@@ -25,6 +27,63 @@ test("选题解析只保留可用条目，并丢掉编造字段", () => {
   assert.equal(topics.length, 1);
   assert.equal(topics[0].title, "小厨房先清出一块台面");
   assert.equal("views" in topics[0], false);
+});
+
+test("没有项目时，选题提示词保持原来的四行", () => {
+  const prompt = buildTopicUserPrompt({ niche: "租房厨房", audience: "", keywords: "", idea: "" }, 6);
+  assert.equal(prompt, "请给出 6 个小红书图文选题。\n领域：租房厨房\n受众：未指定\n关键词：未指定\n粗略想法：未指定");
+  assert.equal(buildUserPrompt("桌面整理", 2).includes("项目资料"), false);
+});
+
+test("选题和文案提示词会写进项目资料，并标明看不到的图片和未抽取的 PDF", () => {
+  const context: ProjectContext = {
+    name: "春季护肤",
+    positioning: "干皮晚间护理",
+    niche: "护肤",
+    audience: "干皮",
+    notes: "",
+    materials: [
+      { kind: "note", title: "产品说明", text: "主打燕麦蜂蜜卸妆膏，适合干皮。" },
+      { kind: "file", title: "包装正面", text: "", filename: "pack.png", mimeType: "image/png" },
+      { kind: "file", title: "检测报告", text: "", filename: "report.pdf", mimeType: "application/pdf" },
+      { kind: "link", title: "官网说明", text: "只记了卖点", url: "https://example.com/oat" },
+    ],
+  };
+  const topicPrompt = buildTopicUserPrompt({ niche: "", audience: "", keywords: "卸妆", idea: "" }, 4, context);
+  assert.match(topicPrompt, /燕麦蜂蜜卸妆膏/);
+  assert.match(topicPrompt, /参考图/);
+  assert.match(topicPrompt, /PDF 未抽取正文/);
+  assert.match(topicPrompt, /不是打开网页后的正文|不是网页正文|用户保存的链接/);
+  assert.match(topicPrompt, /不是热榜/);
+  const copyPrompt = buildUserPrompt("干皮晚间卸妆", 1, context);
+  assert.match(copyPrompt, /燕麦蜂蜜卸妆膏/);
+  assert.match(copyPrompt, /不要编造/);
+  const rendered = renderProjectContext({ ...context, materials: [], notes: "" });
+  assert.match(rendered, /还没有上传资料/);
+  const huge = renderProjectContext({
+    ...context,
+    materials: [{ kind: "note", title: "长文", text: "燕".repeat(4000) }],
+  });
+  assert.equal(huge.includes("燕".repeat(4000)), false);
+  assert.match(huge, /燕燕/);
+});
+
+test("示例选题会点名项目资料，并且不提热榜", () => {
+  const topics = fixtureTopics(
+    { niche: "", audience: "干皮", keywords: "", idea: "" },
+    4,
+    {
+      name: "春季护肤",
+      positioning: "",
+      niche: "",
+      audience: "干皮",
+      notes: "",
+      materials: [{ kind: "note", title: "燕麦蜂蜜", text: "适合干皮晚间使用" }],
+    },
+  );
+  assert.equal(topics.length, 4);
+  assert.match(topics[0].why, /资料「燕麦蜂蜜」/);
+  assert.equal(topics.every((topic) => !/热榜|阅读量|排名/.test(`${topic.title}${topic.why}`)), true);
 });
 
 test("示例选题不提热榜，并且能直接建成任务", () => {

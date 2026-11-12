@@ -86,9 +86,18 @@ data/exports/<jobId>/
 | GET /quota | 查询额度；未配置密钥时返回说明，不报 500 |
 | POST /catalog/refresh | 刷新免费文本模型目录 |
 | GET /catalog | 查看已缓存的免费文本模型与当前路由 |
-| POST /topics | 推荐选题。`{ niche?, audience?, keywords?, idea?, count? }`。`{ "fixture": true }` 返回示例选题，不调用模型 |
-| POST /jobs | 创建任务。选题可以带角度和钩子，最长 240 字 |
-| GET /jobs | 任务列表 |
+| GET /projects | 项目列表。`?archived=1` 只看已归档 |
+| POST /projects | 创建项目。`{ name, positioning?, niche?, audience?, notes? }` |
+| GET /projects/:id | 项目详情和资料列表 |
+| PATCH /projects/:id | 改名、改说明，或 `{ "archived": true \| false }` |
+| DELETE /projects/:id | 删除项目和资料。任务保留，`projectId` 变为空 |
+| GET /projects/:id/materials | 资料列表 |
+| POST /projects/:id/materials | 添加资料。JSON：`{ kind: "note" \| "link", title?, body?, url? }`。文件用 multipart 字段 `file`，可选 `title` / `note` |
+| GET /projects/:id/materials/:materialId | 文件下载；文字和链接返回 JSON |
+| DELETE /projects/:id/materials/:materialId | 删除一份资料 |
+| POST /topics | 推荐选题。`{ niche?, audience?, keywords?, idea?, count?, projectId? }`。带 `projectId` 时，免费文本模型会看到该项目的资料。`{ "fixture": true }` 返回示例选题，不调用模型 |
+| POST /jobs | 创建任务。选题可以带角度和钩子，最长 240 字。可选 `projectId` |
+| GET /jobs | 任务列表。`?projectId=` 只看一个项目，`?unassigned=1` 只看未分组 |
 | GET /jobs/:id | 任务详情 |
 | PATCH /jobs/:id | 修改标题、正文、话题、出图提示词 |
 | POST /jobs/:id/draft | 生成文案。`{ "fixture": true }` 使用示例文案，不调用模型 |
@@ -101,5 +110,7 @@ data/exports/<jobId>/
 | POST /jobs/:id/export | 仅批准后导出素材包与 `postNote` |
 | GET /jobs/:id/package | 下载 zip |
 | POST /jobs/:id/duplicate | 复制为一条需要重新审核的新任务 |
+
+任务 JSON 额外返回 `projectId` 和 `projectName`。没有项目时 `projectId` 为 `null`。选题和文案响应额外返回 `materialsUsed` 与 `materialNote`；没有项目时分别是 `0` 和 `null`，项目还没有资料时会说明这次只按关键词来写。
 
 若设置了 Worker 密钥 `APP_ACCESS_TOKEN`，除 `/`、`/health`、`/favicon.svg` 和 `/session` 外都要先解锁。未设置时这些接口保持开放。

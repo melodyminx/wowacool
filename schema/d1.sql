@@ -1,5 +1,8 @@
 -- wowacool D1 schema for database wowacool.
--- Already applied. The Worker uses these tables as-is; no extra migration is required.
+-- Fresh databases can apply this whole file.
+-- The production database `wowacool` already has the original tables.
+-- Add projects there with schema/migrations/0002_projects.sql (once).
+-- The Worker also applies that additive change if `jobs.project_id` is missing.
 -- Do not put account ids here.
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -12,6 +15,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   image_count INTEGER NOT NULL DEFAULT 0,
   model_used TEXT,
   review_note TEXT,
+  project_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -58,6 +62,37 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  positioning TEXT NOT NULL DEFAULT '',
+  niche TEXT NOT NULL DEFAULT '',
+  audience TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS materials (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  url TEXT,
+  filename TEXT,
+  mime_type TEXT,
+  r2_key TEXT,
+  byte_size INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_job ON assets(job_id);
 CREATE INDEX IF NOT EXISTS idx_audit_job ON audit_log(job_id);
+CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(archived, updated_at);
+CREATE INDEX IF NOT EXISTS idx_materials_project ON materials(project_id, created_at);
