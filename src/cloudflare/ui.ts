@@ -70,6 +70,16 @@ a { color: inherit; }
   color: var(--muted); padding: 8px 12px; border-radius: 999px; font-size: 14px;
 }
 .nav a.on, .nav a:hover { background: white; color: var(--ink); }
+.switcher {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  background: white; border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 8px 4px 12px;
+}
+.switcher span { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.switcher select {
+  border: 0; background: transparent; font: inherit; font-weight: 650;
+  font-size: 14px; max-width: 11em; min-width: 0; padding: 4px 2px; color: var(--ink);
+}
 .spacer { flex: 1; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -109,7 +119,7 @@ a { color: inherit; }
 .field:focus, textarea:focus, .search:focus { border-color: rgba(255, 36, 66, .45); box-shadow: 0 0 0 4px rgba(255, 36, 66, .08); }
 textarea { min-height: 180px; resize: vertical; line-height: 1.65; }
 #note-body, #proj-notes, #new-notes, #review-note { min-height: 96px; }
-#topic-results { scroll-margin-top: 70px; }
+#topic-results { scroll-margin-top: 76px; }
 .stepper { display: flex; align-items: center; gap: 8px; background: white; border-radius: 14px; border: 1px solid var(--line); padding: 6px; }
 .stepper b { min-width: 4.5em; text-align: center; font-size: 14px; }
 .icon-btn, .stepper button {
@@ -260,6 +270,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   .top { flex-wrap: wrap; gap: 8px 10px; padding-top: 10px; }
   .spacer { display: none; }
   .nav { order: 3; width: 100%; }
+  .switcher { order: 4; width: 100%; }
+  .switcher select { max-width: none; flex: 1; }
   .chip { margin-left: auto; }
   .composer, .meters, .soon-grid, .brief, .topics, .projects, .known, .split { grid-template-columns: 1fr; }
   .material { grid-template-columns: 1fr; }
@@ -268,7 +280,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   .job-card { grid-template-columns: 64px 1fr; }
   .job-card .when { display: none; }
   #toast { top: 12px; }
-  #topic-results { scroll-margin-top: 118px; }
+  #topic-results { scroll-margin-top: 168px; }
   .workspace { display: block; }
   .preview-col { display: none; }
   body.pane-preview .editor-col { display: none; }
@@ -320,6 +332,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     modelQuery: "",
     dragId: "",
     projects: [],
+    projectChoices: [],
     project: null,
     materials: [],
     showArchived: false,
@@ -406,7 +419,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   }
   function readRoute() {
     var hash = (location.hash || "#/").replace(/^#/, "");
-    if (hash === "" || hash === "/" || hash === "/board") return { view: "board" };
+    if (hash === "" || hash === "/" || hash === "/board") return { view: "resume" };
+    if (hash === "/projects") return { view: "board" };
     if (hash === "/quota") return { view: "quota" };
     if (hash === "/soon") return { view: "soon" };
     if (hash === "/projects/ungrouped") return { view: "project", id: "ungrouped" };
@@ -419,6 +433,59 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       return { view: "job", id: hash.slice(prefix.length) };
     }
     return { view: "board" };
+  }
+  function rememberedProjectId() {
+    try {
+      var id = localStorage.getItem("wowacool-project") || "";
+      if (id === "ungrouped") return id;
+      if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,80}$/.test(id)) return id;
+    } catch (e) {}
+    return "";
+  }
+  function rememberProject(id) {
+    if (!id) return;
+    try { localStorage.setItem("wowacool-project", id); } catch (e) {}
+  }
+  function forgetProject() {
+    try { localStorage.removeItem("wowacool-project"); } catch (e) {}
+  }
+  function ungroupedProject(count) {
+    return { id: "ungrouped", name: "未分组", ungrouped: true, positioning: "", niche: "", audience: "", notes: "", archived: false, materialCount: 0, jobCount: count || 0 };
+  }
+  function workspaceHash() {
+    if (state.route.view === "project" && state.route.id) return "#/projects/" + state.route.id;
+    if (state.route.view === "job" && state.job) return "#/projects/" + (state.job.projectId || "ungrouped");
+    var remembered = rememberedProjectId();
+    return remembered ? "#/projects/" + remembered : "#/projects";
+  }
+  function switcherValue() {
+    if (state.route.view === "project") return state.route.id || "";
+    if (state.route.view === "job" && state.job) return state.job.projectId || "ungrouped";
+    if (state.route.view === "quota" || state.route.view === "soon") {
+      return (state.project && state.project.id) || rememberedProjectId() || "";
+    }
+    return "";
+  }
+  function loadProjectChoices() {
+    return api("/projects").then(function (data) {
+      state.projectChoices = data.projects || [];
+    }, function () { return null; });
+  }
+  function hydrateRemembered() {
+    var id = rememberedProjectId();
+    if (!id) return Promise.resolve();
+    if (id === "ungrouped") {
+      state.project = ungroupedProject(0);
+      return Promise.resolve();
+    }
+    if (state.project && state.project.id === id) return Promise.resolve();
+    return api("/projects/" + id).then(function (data) {
+      state.project = data.project;
+      state.materials = data.materials || [];
+    }, function () {
+      forgetProject();
+      state.project = null;
+    });
   }
 
   function imageChip() {
@@ -452,12 +519,18 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     state.confirmArchive = false;
     state.confirmDeleteProject = false;
     if (state.session.required && !state.session.unlocked) { render(); return Promise.resolve(); }
-    if (state.route.view === "board") return loadBoard();
-    if (state.route.view === "project") return loadProject(state.route.id);
-    if (state.route.view === "quota") return loadQuota();
-    if (state.route.view === "job") return loadJob(state.route.id);
-    render();
-    return Promise.resolve();
+    if (state.route.view === "resume") {
+      var remembered = rememberedProjectId();
+      location.replace(remembered ? "#/projects/" + remembered : "#/projects");
+      return Promise.resolve();
+    }
+    return loadProjectChoices().then(function () {
+      if (state.route.view === "board") return loadBoard();
+      if (state.route.view === "project") return loadProject(state.route.id);
+      if (state.route.view === "quota") return hydrateRemembered().then(loadQuota);
+      if (state.route.view === "job") return loadJob(state.route.id);
+      return hydrateRemembered().then(function () { render(); });
+    });
   }
   function loadBoard() {
     return Promise.all([
@@ -481,7 +554,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (id === "ungrouped") {
       return Promise.all([api("/jobs?unassigned=1"), api("/quota")]).then(function (pair) {
         var jobs = pair[0].jobs || [];
-        state.project = { id: "ungrouped", name: "未分组", ungrouped: true, positioning: "", niche: "", audience: "", notes: "", archived: false, materialCount: 0, jobCount: jobs.length };
+        rememberProject("ungrouped");
+        state.project = ungroupedProject(jobs.length);
         state.materials = [];
         state.jobs = jobs;
         state.quota = pair[1];
@@ -501,6 +575,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       api("/quota")
     ]).then(function (pair) {
       var changed = !state.project || state.project.id !== pair[0].project.id;
+      rememberProject(pair[0].project.id);
       state.project = pair[0].project;
       state.materials = pair[0].materials || [];
       state.jobs = pair[1].jobs || [];
@@ -516,6 +591,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       state.project = null;
       state.materials = [];
       state.banner = err.message;
+      if (err.status === 404) {
+        if (rememberedProjectId() === id) forgetProject();
+        location.replace("#/projects");
+        return;
+      }
       render();
     });
   }
@@ -533,6 +613,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     return api("/jobs/" + id).then(function (data) {
       var changed = !state.job || state.job.id !== data.job.id;
       state.job = data.job;
+      rememberProject(data.job.projectId || "ungrouped");
       state.tags = String(data.job.tags || "").split(",").map(function (tag) { return tag.trim(); }).filter(Boolean);
       if (changed) {
         state.reviewNote = "";
@@ -554,7 +635,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
             state.materials = [];
           })
         : Promise.resolve().then(function () {
-            state.project = null;
+            state.project = ungroupedProject(0);
             state.materials = [];
           });
       return remembered.then(function () {
@@ -568,8 +649,29 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     });
   }
 
+  function switcherHtml() {
+    var current = switcherValue();
+    var choices = state.projectChoices.slice();
+    var extraId = state.project && state.project.id && state.project.id !== "ungrouped" ? state.project.id : "";
+    var extraName = state.project && state.project.name;
+    if (!extraId && state.job && state.job.projectId) {
+      extraId = state.job.projectId;
+      extraName = state.job.projectName || "当前项目";
+    }
+    if (extraId && !choices.some(function (item) { return item.id === extraId; })) {
+      choices.unshift({ id: extraId, name: extraName || "当前项目", archived: state.project && state.project.archived });
+    }
+    var options = '<option value="ungrouped"' + (current === "ungrouped" ? " selected" : "") + ">未分组</option>" +
+      choices.map(function (project) {
+        var label = project.name + (project.archived ? "（已归档）" : "");
+        return '<option value="' + esc(project.id) + '"' + (current === project.id ? " selected" : "") + ">" + esc(label) + "</option>";
+      }).join("") +
+      '<option value=""' + (current === "" ? " selected" : "") + ">全部项目</option>";
+    return '<label class="switcher"><span>当前项目</span><select id="project-switcher" aria-label="切换项目">' + options + "</select></label>";
+  }
   function header() {
     var route = state.route.view;
+    var home = workspaceHash();
     var chip = "额度";
     if (state.quota && state.quota.configured === false) chip = "未配置文案密钥";
     else if (state.quota && state.quota.quota && state.quota.quota.freeModelDailyRequests) {
@@ -577,12 +679,13 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       chip = daily.remaining <= 0 ? "今日额度已用完" : "今日剩余 " + daily.remaining;
     }
     return '<header class="top wrap">' +
-      '<a class="brand" href="#/"><span class="seal">图</span><span><b>wowacool</b><small>小红书图文工作台</small></span></a>' +
+      '<a class="brand" href="' + home + '"><span class="seal">图</span><span><b>wowacool</b><small>小红书图文工作台</small></span></a>' +
       '<nav class="nav">' +
-        '<a href="#/" class="' + (route === "board" || route === "job" || route === "project" ? "on" : "") + '">工作台</a>' +
+        '<a href="' + home + '" class="' + (route === "job" || route === "project" ? "on" : "") + '">工作台</a>' +
         '<a href="#/quota" class="' + (route === "quota" ? "on" : "") + '">额度</a>' +
         '<a href="#/soon" class="' + (route === "soon" ? "on" : "") + '">即将推出</a>' +
       "</nav>" +
+      switcherHtml() +
       '<div class="spacer"></div>' +
       '<a class="chip" href="#/quota">' + esc(imageChip()) + "</a>" +
       '<a class="chip" href="#/quota">' + esc(chip) + "</a>" +
@@ -634,7 +737,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   }
   function projectHtml() {
     if (!state.project) {
-      return shell('<section class="card empty"><h2>没有打开这个项目</h2><p>' + esc(state.banner || "它可能已被删除。") + '</p><p><a class="btn" href="#/">返回项目列表</a></p></section>');
+      return shell('<section class="card empty"><h2>没有打开这个项目</h2><p>' + esc(state.banner || "它可能已被删除。") + '</p><p><a class="btn" href="#/projects">返回项目列表</a></p></section>');
     }
     var project = state.project;
     var ungrouped = !!project.ungrouped;
@@ -655,7 +758,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (state.confirmArchive) confirm += '<div class="banner">归档后项目从默认列表收起，资料和任务都还在。再点一次确认归档。</div>';
     if (state.confirmDeleteProject) confirm += '<div class="banner bad">删除项目会去掉资料。里面的任务会回到未分组，任务本身还在。再点一次确认删除。</div>';
     return shell(
-      '<div class="page-head"><div><a href="#/">← 全部项目</a>' + head + meta + "</div></div>" +
+      '<div class="page-head"><div><a href="#/projects">← 全部项目</a>' + head + meta + "</div></div>" +
       (project.archived ? '<div class="banner">这个项目已归档，不会出现在默认列表里。</div>' : "") +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
       confirm +
@@ -768,7 +871,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
 
   function jobHtml() {
     if (!state.job) {
-      return shell('<section class="card empty"><h2>没有打开这条任务</h2><p>' + esc(state.banner || "它可能已被删除。") + '</p><p><a class="btn" href="#/">返回工作台</a></p></section>');
+      return shell('<section class="card empty"><h2>没有打开这条任务</h2><p>' + esc(state.banner || "它可能已被删除。") + '</p><p><a class="btn" href="' + workspaceHash() + '">返回工作台</a></p></section>');
     }
     var job = state.job;
     var locked = job.status === "exported";
@@ -1353,6 +1456,9 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       notes: state.project.notes.trim()
     } }).then(function (data) {
       state.project = data.project;
+      state.projectChoices = state.projectChoices.map(function (item) {
+        return item.id === data.project.id ? data.project : item;
+      });
       state.materials = data.materials || state.materials;
       toast("项目已保存");
       render();
@@ -1379,7 +1485,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     setBusy(true);
     api("/projects/" + state.project.id, { method: "PATCH", json: { archived: true } }).then(function () {
       state.confirmArchive = false;
-      location.hash = "#/";
+      if (rememberedProjectId() === state.project.id) forgetProject();
+      location.hash = "#/projects";
     }).catch(function (err) {
       state.banner = err.message;
       render();
@@ -1391,7 +1498,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     setBusy(true);
     api("/projects/" + state.project.id, { method: "DELETE" }).then(function () {
       state.confirmDeleteProject = false;
-      location.hash = "#/";
+      if (rememberedProjectId() === state.project.id) forgetProject();
+      location.hash = "#/projects";
     }).catch(function (err) {
       state.banner = err.message;
       render();
@@ -1484,6 +1592,19 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     }).finally(function () { setBusy(false); });
   }
 
+  document.addEventListener("change", function (event) {
+    var target = event.target;
+    if (!target || target.id !== "project-switcher") return;
+    if (state.busy) { target.value = switcherValue(); return; }
+    var value = target.value;
+    if (!value) {
+      if ((location.hash || "#/") !== "#/projects") location.hash = "#/projects";
+      return;
+    }
+    rememberProject(value);
+    var next = "#/projects/" + value;
+    if (location.hash !== next) location.hash = next;
+  });
   document.addEventListener("click", function (event) {
     var btn = event.target.closest("[data-action]");
     if (!btn || state.busy) return;
