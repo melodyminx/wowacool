@@ -1,13 +1,8 @@
-import { createRequire } from "node:module";
 import { inflateSync } from "node:zlib";
+import { decode as decodeJpegBytes } from "jpeg-js";
 
-const require = createRequire(import.meta.url);
-const jpeg = require("jpeg-js") as {
-  decode(
-    data: Buffer | Uint8Array,
-    options?: { useTArray?: boolean; formatAsRGBA?: boolean; maxResolutionInMP?: number },
-  ): { width: number; height: number; data: Uint8Array };
-};
+// jpeg-js is CommonJS. A static import lets Wrangler inline it.
+// createRequire(import.meta.url) crashes Worker startup: the bundled script has no import.meta.url.
 
 export interface Raster {
   width: number;
@@ -143,7 +138,7 @@ function decodePng(bytes: Uint8Array): Raster | null {
 
 function decodeJpeg(bytes: Uint8Array): Raster | null {
   try {
-    const decoded = jpeg.decode(Buffer.from(bytes), {
+    const decoded = decodeJpegBytes(bytes, {
       useTArray: true,
       formatAsRGBA: true,
       maxResolutionInMP: 16,
