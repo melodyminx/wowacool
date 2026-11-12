@@ -12,7 +12,7 @@ const SYSTEM_PROMPT = `你是小红书图文笔记文案助手。只输出一个
 - content: 中文正文，不超过 1000 个字，口语化、可直接发布
 - tags: 3 到 6 个话题字符串数组，不要带 # 号
 - imagePrompts: 中文出图提示词数组，条数等于用户指定的图片数量，每条描述一张竖版 3:4 图片
-内容必须健康、实用、无误导。如果给了项目资料，文案要贴着资料，不要编造资料里没有的功效、销量或排名。图片资料看不到画面，链接不是网页正文。`;
+内容必须健康、实用、无误导。如果给了项目资料，文案要贴着资料，不要编造资料里没有的功效、销量或排名。助手写入的调研摘要不是热榜或排名。图片资料看不到画面，链接不是网页正文。`;
 
 export function buildUserPrompt(topic: string, imageCount: number, context?: ProjectContext | null): string {
   const base = `选题：${topic}

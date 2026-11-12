@@ -67,6 +67,14 @@ npx wrangler d1 execute wowacool --remote --file=schema/migrations/0002_projects
 
 这次会新增 `projects`、`materials`，并给 `jobs` 增加可空的 `project_id`。旧任务保持 `NULL`，工作台里显示为「未分组」。Worker 在第一次业务请求时也会补上同样的变更，避免还没执行 SQL 时 `/jobs` 不可用。`GET /health` 不改。不要把账号 ID 或 token 写进命令记录。
 
+选题数据源是另一份可重复执行的迁移，不要重跑上面的 `0002_projects.sql`：
+
+```bash
+npx wrangler d1 execute wowacool --remote --file=schema/migrations/0003_data_sources.sql
+```
+
+助手写入摘要还需要 `npx wrangler secret put DATA_SOURCE_TOKEN`。口令不要写进仓库。未设置 `APP_ACCESS_TOKEN` 时工作台仍然开放，但这条写入接口不会因此开放。
+
 本地检查打包（不上传）：
 
 ```bash

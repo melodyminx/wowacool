@@ -68,6 +68,36 @@ test("选题和文案提示词会写进项目资料，并标明看不到的图�
   assert.match(huge, /燕燕/);
 });
 
+test("助手写入的调研摘要进入选题提示词，停用内容不在这份上下文里", () => {
+  const context: ProjectContext = {
+    name: "全球AI产品资讯",
+    positioning: "",
+    niche: "AI 产品",
+    audience: "",
+    notes: "",
+    materials: [],
+    sources: [
+      {
+        name: "ai产品发布评测",
+        entries: [{ title: "某模型更新", text: "这是助手整理的发布摘要", url: "https://example.com/release" }],
+      },
+    ],
+  };
+  const topicPrompt = buildTopicUserPrompt({ niche: "", audience: "", keywords: "发布", idea: "" }, 4, context);
+  assert.match(topicPrompt, /助手写入的调研摘要/);
+  assert.match(topicPrompt, /某模型更新/);
+  assert.match(topicPrompt, /这是助手整理的发布摘要/);
+  assert.match(topicPrompt, /不是热榜/);
+  assert.match(topicPrompt, /不是官方排名/);
+  const copyPrompt = buildUserPrompt("本周产品", 1, context);
+  assert.match(copyPrompt, /助手写入的调研摘要/);
+  assert.match(copyPrompt, /这是助手整理的发布摘要/);
+  const topics = fixtureTopics({ niche: "AI", audience: "", keywords: "", idea: "" }, 2, context);
+  assert.match(topics[0].why, /调研「某模型更新」/);
+  assert.equal(/热榜|阅读量|排名/.test(topics[0].title + topics[0].why), false);
+  assert.equal(topicPrompt.includes("停用摘要贝塔"), false);
+});
+
 test("示例选题会点名项目资料，并且不提热榜", () => {
   const topics = fixtureTopics(
     { niche: "", audience: "干皮", keywords: "", idea: "" },

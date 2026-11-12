@@ -335,6 +335,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     projectChoices: [],
     project: null,
     materials: [],
+    sources: [],
     showArchived: false,
     ungroupedCount: 0,
     projectForm: { name: "", positioning: "", niche: "", audience: "", notes: "" },
@@ -544,6 +545,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       state.quota = pair[2];
       state.project = null;
       state.materials = [];
+      state.sources = [];
       render();
     }).catch(function (err) {
       state.banner = err.message;
@@ -557,6 +559,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         rememberProject("ungrouped");
         state.project = ungroupedProject(jobs.length);
         state.materials = [];
+        state.sources = [];
         state.jobs = jobs;
         state.quota = pair[1];
         state.topics = [];
@@ -572,12 +575,14 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     return Promise.all([
       api("/projects/" + id),
       api("/jobs?projectId=" + encodeURIComponent(id)),
-      api("/quota")
+      api("/quota"),
+      api("/projects/" + id + "/data-sources").catch(function () { return { sources: [] }; })
     ]).then(function (pair) {
       var changed = !state.project || state.project.id !== pair[0].project.id;
       rememberProject(pair[0].project.id);
       state.project = pair[0].project;
       state.materials = pair[0].materials || [];
+      state.sources = pair[3].sources || [];
       state.jobs = pair[1].jobs || [];
       state.quota = pair[2];
       if (changed) {
@@ -590,6 +595,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     }).catch(function (err) {
       state.project = null;
       state.materials = [];
+      state.sources = [];
       state.banner = err.message;
       if (err.status === 404) {
         if (rememberedProjectId() === id) forgetProject();
@@ -627,16 +633,22 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         sessionStorage.removeItem("wowacool-count");
       }
       var remembered = data.job.projectId
-        ? api("/projects/" + data.job.projectId).then(function (projectData) {
-            state.project = projectData.project;
-            state.materials = projectData.materials || [];
+        ? Promise.all([
+            api("/projects/" + data.job.projectId),
+            api("/projects/" + data.job.projectId + "/data-sources").catch(function () { return { sources: [] }; })
+          ]).then(function (pair) {
+            state.project = pair[0].project;
+            state.materials = pair[0].materials || [];
+            state.sources = pair[1].sources || [];
           }).catch(function () {
             state.project = null;
             state.materials = [];
+            state.sources = [];
           })
         : Promise.resolve().then(function () {
             state.project = ungroupedProject(0);
             state.materials = [];
+            state.sources = [];
           });
       return remembered.then(function () {
         takeCopyHandoff();
@@ -756,13 +768,14 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       '<button class="btn" type="button" data-action="delete-project">删除项目</button></div>';
     var confirm = "";
     if (state.confirmArchive) confirm += '<div class="banner">归档后项目从默认列表收起，资料和任务都还在。再点一次确认归档。</div>';
-    if (state.confirmDeleteProject) confirm += '<div class="banner bad">删除项目会去掉资料。里面的任务会回到未分组，任务本身还在。再点一次确认删除。</div>';
+    if (state.confirmDeleteProject) confirm += '<div class="banner bad">删除项目会去掉资料和选题数据源。里面的任务会回到未分组，任务本身还在。再点一次确认删除。</div>';
     return shell(
       '<div class="page-head"><div><a href="#/projects">← 全部项目</a>' + head + meta + "</div></div>" +
       (project.archived ? '<div class="banner">这个项目已归档，不会出现在默认列表里。</div>' : "") +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
       confirm +
       materialsHtml(project) +
+      sourcesHtml(project) +
       topicFlowHtml(project) +
       jobFilters()
     );
@@ -795,6 +808,41 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         '<p class="hint">文本、Markdown、CSV、PDF 和常见图片。单个不超过 4MB。PDF 不抽取正文，图片模型也看不到画面，请把要点写在标题或文字资料里。</p></div>' +
       "</div></section>";
   }
+  function sourcesHtml(project) {
+    if (project.ungrouped) {
+      return '<section class="card block"><h2>选题数据源</h2><p class="hint">未分组没有选题数据源。请先进入一个项目，再添加助手要写入的来源。</p></section>';
+    }
+    var list = state.sources.length ? '<div class="materials">' + state.sources.map(function (source) {
+      var entries = (source.entries || []).map(function (entry) {
+        var link = entry.url ? '<p><a href="' + esc(entry.url) + '" rel="noreferrer" target="_blank">' + esc(entry.url) + "</a></p>" : "";
+        return "<div><h3>" + esc(entry.title || "未命名摘要") + "</h3><p>" + esc(entry.body || "") + "</p>" + link +
+          '<p class="hint">' + esc(shortTime(entry.collectedAt)) + "</p></div>";
+      }).join("");
+      return '<article class="card material"><span class="kind">' + (source.enabled ? "已启用" : "已停用") + "</span><div><h3>" + esc(source.name) + "</h3>" +
+        '<p class="hint">最近更新 ' + esc(shortTime(source.lastEntryAt)) + "</p>" +
+        (entries || '<p class="hint">还没有摘要。助手写入后会出现在这里。</p>') +
+        "</div>" +
+        '<button class="btn" type="button" data-action="toggle-source" data-id="' + esc(source.id) + '" data-enabled="' + (source.enabled ? "1" : "0") + '">' +
+        (source.enabled ? "停用" : "启用") + "</button></article>";
+    }).join("") + "</div>" : '<p class="hint">还没有选题数据源。添加名称后，助手才能按这个名称写入摘要。</p>';
+    return '<section class="card block"><h2>选题数据源</h2>' +
+      '<p class="hint">启用的数据源会进入选题和文案。内容是助手写入的调研摘要，不是热榜，也没有阅读量或排名。停用的数据源不会进入提示词。写入需要在部署环境配置 DATA_SOURCE_TOKEN，这个页面不收集口令。</p>' +
+      list +
+      '<div class="actions"><input class="field" id="source-name" maxlength="40" placeholder="数据源名称，例如 ai产品发布评测" aria-label="数据源名称">' +
+      '<button class="btn" type="button" data-action="add-source">添加数据源</button></div></section>';
+  }
+  function shortTime(value) {
+    if (!value) return "还没有写入";
+    return String(value).replace("T", " ").replace("Z", "").slice(0, 16);
+  }
+  function enabledSourcesWithText() {
+    return state.sources.filter(function (source) {
+      if (!source.enabled) return false;
+      return (source.entries || []).some(function (entry) {
+        return String(entry.title || "").trim() || String(entry.body || "").trim();
+      });
+    });
+  }
   function topicFlowHtml(project) {
     return '<section class="card hero"><h2 class="subhead">先选题，再生成文案</h2>' +
       '<p class="hint">' + esc(materialHint(project)) + "</p>" +
@@ -816,8 +864,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   }
   function materialHint(project) {
     if (!project || project.ungrouped) return "未分组没有项目资料。推荐选题只按你写下的领域、受众、关键词或想法。";
-    if (!state.materials.length) return "这个项目还没有资料。你仍可以按关键词推荐选题，和以前一样。";
-    return "推荐选题会读这个项目的 " + state.materials.length + " 份资料，不会另外抓取网页或热榜。";
+    var sources = enabledSourcesWithText().length;
+    if (!state.materials.length && !sources) return "这个项目还没有资料。你仍可以按关键词推荐选题，和以前一样。";
+    if (!state.materials.length) return "推荐选题会读 " + sources + " 个已启用选题数据源里的助手调研摘要。这不是热榜，也没有阅读量或排名。";
+    var extra = sources ? "，以及 " + sources + " 个已启用的选题数据源" : "";
+    return "推荐选题会读这个项目的 " + state.materials.length + " 份资料" + extra + "，不会另外抓取网页或热榜。";
   }
   function jobFilters() {
     var filters = ["all", "draft", "pending_review", "approved", "rejected", "exported"];
@@ -908,9 +959,15 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     var model = !job.modelUsed ? "尚未生成文案" : (job.modelUsed === "fixture/local" ? "示例文案 · 未调用模型" : "文案模型 · " + job.modelUsed);
     var materialLine = "";
     if (job.projectId) {
-      materialLine = state.materials.length
-        ? '<p class="hint">生成文案会读项目「' + esc((state.project && state.project.name) || job.projectName || "当前项目") + "」的 " + state.materials.length + " 份资料。</p>"
-        : '<p class="hint">这个项目还没有资料。生成文案只按选题来写。</p>';
+      var sourceCount = enabledSourcesWithText().length;
+      if (state.materials.length || sourceCount) {
+        var bits = [];
+        if (state.materials.length) bits.push(state.materials.length + " 份资料");
+        if (sourceCount) bits.push(sourceCount + " 个已启用的选题数据源");
+        materialLine = '<p class="hint">生成文案会读项目「' + esc((state.project && state.project.name) || job.projectName || "当前项目") + "」的 " + bits.join("和") + "。</p>";
+      } else {
+        materialLine = '<p class="hint">这个项目还没有资料。生成文案只按选题来写。</p>';
+      }
     } else {
       materialLine = '<p class="hint">这条任务在未分组，生成文案只按选题来写。</p>';
     }
@@ -1182,7 +1239,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   function projectGrounded() {
     var project = state.project;
     if (!project || project.ungrouped) return false;
-    return state.materials.length > 0 || !!(project.notes || project.positioning || project.niche || project.audience);
+    return state.materials.length > 0 || enabledSourcesWithText().length > 0 || !!(project.notes || project.positioning || project.niche || project.audience);
   }
   function suggestTopics(fixture) {
     var brief = currentBrief();
@@ -1580,6 +1637,40 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       render();
     }).finally(function () { setBusy(false); });
   }
+  function addSource() {
+    if (!state.project || state.project.ungrouped) return;
+    var input = document.getElementById("source-name");
+    var name = input ? input.value.trim() : "";
+    if (!name) { state.banner = "请先写数据源名称"; render(); return; }
+    setBusy(true);
+    api("/projects/" + state.project.id + "/data-sources", { method: "POST", json: { name: name } }).then(function () {
+      state.banner = "";
+      toast("数据源已添加");
+      return refreshSources();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function toggleSource(id, enabled) {
+    if (!state.project || state.project.ungrouped || !id) return;
+    setBusy(true);
+    api("/projects/" + state.project.id + "/data-sources/" + id, { method: "PATCH", json: { enabled: enabled !== "1" } }).then(function () {
+      state.banner = "";
+      toast(enabled === "1" ? "数据源已停用" : "数据源已启用");
+      return refreshSources();
+    }).catch(function (err) {
+      state.banner = err.message;
+      render();
+    }).finally(function () { setBusy(false); });
+  }
+  function refreshSources() {
+    if (!state.project || state.project.ungrouped) return Promise.resolve();
+    return api("/projects/" + state.project.id + "/data-sources").then(function (data) {
+      state.sources = data.sources || [];
+      render();
+    });
+  }
   function deleteMaterial(id) {
     if (!state.project || !id) return;
     setBusy(true);
@@ -1653,6 +1744,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (action === "add-note") addNote();
     if (action === "add-link") addLink();
     if (action === "delete-material") deleteMaterial(btn.getAttribute("data-id"));
+    if (action === "add-source") addSource();
+    if (action === "toggle-source") toggleSource(btn.getAttribute("data-id"), btn.getAttribute("data-enabled"));
     if (action === "copy-payload" && state.job && state.job.postNote) {
       var text = JSON.stringify(state.job.postNote, null, 2);
       if (navigator.clipboard && navigator.clipboard.writeText) {

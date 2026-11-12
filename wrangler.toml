@@ -31,7 +31,9 @@ binding = "AI"
 # Optional Worker secrets, set with `npx wrangler secret put`, never committed:
 #   OPENROUTER_API_KEY   free-text copy generation
 #   APP_ACCESS_TOKEN      optional gate for the public workers.dev URL
+#   DATA_SOURCE_TOKEN     required for assistant writes to topic data sources
 # If APP_ACCESS_TOKEN is unset, the workbench stays open so it can be demoed after deploy.
+# Ingest still requires DATA_SOURCE_TOKEN. Do not commit that value.
 
 [observability]
 enabled = true

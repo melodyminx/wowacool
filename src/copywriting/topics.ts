@@ -34,6 +34,7 @@ export const TOPIC_SYSTEM_PROMPT = `你是小红书图文选题编辑。只输�
 - 内容健康、具体、可人工改写
 - 不要建议抓取小红书，不要建议自动发布，不要建议去评论别人的笔记
 - 如果给了项目资料，选题必须贴着资料，不要把资料写成热榜、阅读量或官方排名
+- 助手写入的调研摘要不是热榜、排名或阅读量，不要据此编造成绩
 - 图片资料只有文件名和说明，不要假装看过画面
 - 链接只是用户保存的书签，不要假设你打开过网页`;
 
@@ -122,6 +123,10 @@ export function fixtureTopics(brief: TopicBrief, count = 6, context?: ProjectCon
   const total = clampTopicCount(count);
   const material = context?.materials.find((item) => item.title.trim() || item.text.trim());
   const materialLabel = material ? material.title.trim() || truncateChars(material.text.trim(), 18) : "";
+  const sourceEntry = context?.sources
+    ?.flatMap((source) => source.entries)
+    .find((entry) => entry.title.trim() || entry.text.trim());
+  const sourceLabel = sourceEntry ? sourceEntry.title.trim() || truncateChars(sourceEntry.text.trim(), 18) : "";
   const focus = brief.niche || brief.idea || brief.keywords || materialLabel || context?.name || "这件事";
   const who = brief.audience || context?.audience || "同样在意这件事的人";
   const keyword = brief.keywords ? `关键词「${brief.keywords}」可以写进正文，但不要堆砌。` : "用具体物件代替空泛形容词。";
@@ -138,7 +143,11 @@ export function fixtureTopics(brief: TopicBrief, count = 6, context?: ProjectCon
   return patterns.slice(0, total).map(([suffix, angle, why, hook]) => ({
     title: truncateChars(`${focus}${suffix}`, TITLE_MAX),
     angle,
-    why: materialLabel ? truncateChars(`资料「${truncateChars(materialLabel, 18)}」。${why}`, WHY_MAX) : why,
+    why: materialLabel
+      ? truncateChars(`资料「${truncateChars(materialLabel, 18)}」。${why}`, WHY_MAX)
+      : sourceLabel
+        ? truncateChars(`调研「${truncateChars(sourceLabel, 18)}」。${why}`, WHY_MAX)
+        : why,
     hook,
   }));
 }

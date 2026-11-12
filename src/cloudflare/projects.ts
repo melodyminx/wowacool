@@ -2,6 +2,7 @@ import type { MaterialKind, MaterialSnippet, ProjectContext } from "../copywriti
 import { truncateChars } from "../util/text.js";
 import { newId, nowIso } from "../util/id.js";
 import { HttpError } from "./http.js";
+import { loadEnabledSourceSnippets } from "./sources.js";
 
 export const PROJECT_NAME_MAX = 40;
 export const MATERIAL_TITLE_MAX = 80;
@@ -157,6 +158,8 @@ export async function deleteProject(db: D1Database, bucket: R2Bucket, id: string
   const materials = await listMaterials(db, id);
   const jobs = await db.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE project_id = ?`).bind(id).first<{ n: number }>();
   await db.batch([
+    db.prepare(`DELETE FROM data_source_entries WHERE project_id = ?`).bind(id),
+    db.prepare(`DELETE FROM data_sources WHERE project_id = ?`).bind(id),
     db.prepare(`UPDATE jobs SET project_id = NULL WHERE project_id = ?`).bind(id),
     db.prepare(`DELETE FROM materials WHERE project_id = ?`).bind(id),
     db.prepare(`DELETE FROM projects WHERE id = ?`).bind(id),
@@ -305,6 +308,7 @@ export function toProjectContext(project: StoredProject, materials: StoredMateri
     audience: project.audience,
     notes: project.notes,
     materials: materials.map(toSnippet),
+    sources: [],
   };
 }
 
@@ -312,7 +316,9 @@ export async function loadProjectContext(db: D1Database, projectId: string | nul
   if (!projectId) return null;
   const project = await getProject(db, projectId);
   if (!project) return null;
-  return toProjectContext(project, await listMaterials(db, projectId));
+  const context = toProjectContext(project, await listMaterials(db, projectId));
+  context.sources = await loadEnabledSourceSnippets(db, projectId);
+  return context;
 }
 
 export function classifyMaterialUpload(filename: string, bytes: Uint8Array): ClassifiedUpload | null {
