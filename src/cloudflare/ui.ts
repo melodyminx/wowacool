@@ -85,6 +85,14 @@ a { color: inherit; }
 .hero h1 { margin: 0 0 6px; font-family: var(--serif); font-size: clamp(28px, 4vw, 40px); font-weight: 650; letter-spacing: -.03em; }
 .hero p.lead { margin: 0 0 18px; color: var(--muted); max-width: 46em; line-height: 1.6; }
 .composer { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
+.brief { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.brief textarea { grid-column: 1 / -1; min-height: 88px; }
+.topics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.topic-card { padding: 14px; display: grid; gap: 8px; }
+.topic-card .hint { margin: 0; }
+.known { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 16px; }
+.known .actions { grid-column: 1 / -1; margin-top: 0; }
+.subhead { margin: 18px 0 8px; font-size: 15px; }
 .field, textarea, .search {
   width: 100%; border: 1px solid var(--line); background: white; border-radius: 14px;
   padding: 12px 14px; outline: none;
@@ -150,8 +158,10 @@ body.is-busy .btn { opacity: .55; }
 }
 .soon-card p, .soon-list p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .foot { color: var(--faint); font-size: 12px; padding: 8px 0 28px; line-height: 1.6; }
-.page-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; margin: 8px 0 14px; }
-.page-head h1 { font-family: var(--serif); font-size: 32px; margin: 0; }
+.page-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin: 8px 0 14px; }
+.page-head > div:first-child { min-width: 0; flex: 1; }
+.page-head h1 { font-family: var(--serif); font-size: 32px; margin: 0; overflow-wrap: anywhere; }
+.page-head .actions { flex: none; }
 .steps { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; padding: 0; margin: 8px 0 0; }
 .steps li { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 13px; }
 .steps li span { width: 20px; height: 20px; border-radius: 99px; display: grid; place-items: center; background: white; border: 1px solid var(--line); font-size: 11px; }
@@ -239,7 +249,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   .spacer { display: none; }
   .nav { order: 3; width: 100%; }
   .chip { margin-left: auto; }
-  .composer, .meters, .soon-grid { grid-template-columns: 1fr; }
+  .composer, .meters, .soon-grid, .brief, .topics, .known { grid-template-columns: 1fr; }
   .soon-list { grid-template-columns: 1fr; }
   .page-head { flex-direction: column; align-items: stretch; }
   .job-card { grid-template-columns: 64px 1fr; }
@@ -283,6 +293,13 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     imageCount: 3,
     composerCount: 3,
     composerTopic: "",
+    brief: { niche: "", audience: "", keywords: "", idea: "" },
+    topics: [],
+    topicsFixture: false,
+    topicsModel: "",
+    topicNote: "",
+    health: null,
+    redrawIndex: 0,
     authError: "",
     confirmReplace: false,
     modelQuery: "",
@@ -300,7 +317,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     ["官方发布 write_notes", "小红书开放平台的 write_notes 仍在规划中。这里只导出素材包和官方唤起参数，不会代发。"],
     ["抖音", "本期只做小红书图文。抖音不会从这里发布，也没有隐藏的发布按钮。"],
     ["视频号", "微信视频号不在本期范围。入口只是说明，不会收集视频号内容。"],
-    ["视频", "不做视频生成或视频发布。配图只用占位图，或你自己上传的图片。"],
+    ["视频", "不做视频生成或视频发布。图文笔记的配图可以在工作台里生成，视频仍然不做。"],
     ["评论助手", "不会给别人的笔记留言。若以后做，也只处理你自己的内容，并且先由人确认。"]
   ];
 
@@ -375,9 +392,24 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     return { view: "board" };
   }
 
+  function imageChip() {
+    var health = state.health;
+    if (!health) return "出图";
+    if (health.imageProvider === "workers_ai" && health.imageReady) return "出图 · Workers AI";
+    if (health.imageProvider === "workers_ai") return "出图 · 绑定缺失";
+    if (health.imageProvider === "openai_compatible" && health.imageReady) return "出图 · 兼容接口";
+    if (health.imageProvider === "openai_compatible") return "出图 · 未配置";
+    return "出图 · 占位图";
+  }
+  function imageButtonLabel() {
+    var health = state.health;
+    if (health && health.imageProvider === "mock") return "生成占位图";
+    return "生成图片";
+  }
   function boot() {
-    api("/session").then(function (data) {
-      state.session = data;
+    Promise.all([api("/session"), api("/health")]).then(function (pair) {
+      state.session = pair[0];
+      state.health = pair[1];
       return followRoute();
     }).catch(function (err) {
       state.banner = err.message;
@@ -425,11 +457,13 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         state.previewIndex = 0;
         state.mobilePane = "edit";
         state.confirmReplace = false;
+        state.redrawIndex = 0;
         state.copyError = null;
         var stored = sessionStorage.getItem("wowacool-count");
         state.imageCount = clampCount(stored || data.job.imagePrompts.length || data.job.images.length || 3);
         sessionStorage.removeItem("wowacool-count");
       }
+      takeCopyHandoff();
       render({ fresh: true });
     }).catch(function (err) {
       state.job = null;
@@ -454,6 +488,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
         '<a href="#/soon" class="' + (route === "soon" ? "on" : "") + '">即将推出</a>' +
       "</nav>" +
       '<div class="spacer"></div>' +
+      '<a class="chip" href="#/quota">' + esc(imageChip()) + "</a>" +
       '<a class="chip" href="#/quota">' + esc(chip) + "</a>" +
     "</header>";
   }
@@ -475,19 +510,49 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       }).join("") + "</div></section>";
     return shell(
       '<section class="card hero">' +
-        "<h1>从选题到可发布的图文包</h1>" +
-        '<p class="lead">写标题和正文，配上 1 到 18 张图，你自己点头之后，再下载审核包和官方发布参数。人工审核是导出的前提。</p>' +
-        '<form id="composer" class="composer">' +
-          '<input class="field" id="topic" name="topic" maxlength="120" placeholder="例如：一周便当不重样" aria-label="选题" value="' + esc(state.composerTopic) + '">' +
+        "<h1>先选题，再生成文案</h1>" +
+        '<p class="lead">写下领域、受众、关键词，或一个粗略想法。免费文本模型会给出几个选题。你选一个，接着生成标题、正文和话题。导出前必须你自己审核。</p>' +
+        '<div class="brief">' +
+          '<input class="field" id="niche" maxlength="40" placeholder="领域，例如租房厨房" aria-label="领域" value="' + esc(state.brief.niche) + '">' +
+          '<input class="field" id="audience" maxlength="40" placeholder="受众，例如独居上班族" aria-label="受众" value="' + esc(state.brief.audience) + '">' +
+          '<input class="field" id="keywords" maxlength="80" placeholder="关键词，例如收纳、小空间" aria-label="关键词" value="' + esc(state.brief.keywords) + '">' +
+          '<textarea id="idea" maxlength="200" placeholder="或者直接写一个粗略想法" aria-label="粗略想法">' + esc(state.brief.idea) + "</textarea>" +
+        "</div>" +
+        '<div class="actions"><button class="btn primary" type="button" data-action="suggest">推荐选题</button><button class="btn" type="button" data-action="suggest-fixture">使用示例选题</button></div>' +
+        topicCards() +
+        '<h2 class="subhead">我已经有选题</h2>' +
+        '<form id="composer" class="known">' +
+          '<input class="field" id="topic" name="topic" maxlength="240" placeholder="例如：一周便当不重样" aria-label="选题" value="' + esc(state.composerTopic) + '">' +
           stepper("composerCount", state.composerCount) +
-          '<button class="btn primary" type="submit">创建任务</button>' +
+          '<div class="actions"><button class="btn primary" type="submit">创建并生成文案</button><button class="btn" type="button" data-action="create-only">只创建任务</button></div>' +
         "</form>" +
+        '<p class="hint">生成文案会使用 1 次免费模型额度。标题不超过 20 字，正文不超过 1000 字，话题 3 到 6 个。没有密钥时可以用示例文案。</p>' +
       "</section>" +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
       '<div class="filters">' + filters.map(function (key) {
         return '<button type="button" data-action="filter" data-filter="' + key + '" class="' + (state.filter === key ? "on" : "") + '">' + names[key] + "</button>";
       }).join("") + "</div>" + list + soon
     );
+  }
+  function topicCards() {
+    if (!state.topics.length && !state.topicNote) return "";
+    var note = state.topicNote ? '<div class="banner' + (state.topics.length ? "" : " bad") + '">' + esc(state.topicNote) + "</div>" : "";
+    var label = state.topicsFixture ? "示例选题 · 未调用模型，也不是热榜" : (state.topicsModel ? "选题模型 · " + state.topicsModel : "");
+    var cards = state.topics.map(function (topic, index) {
+      return '<article class="card topic-card">' +
+        '<input class="field" data-topic-index="' + index + '" aria-label="选题 ' + (index + 1) + '" value="' + esc(topic.title) + '">' +
+        '<p class="hint"><b>角度</b> ' + esc(topic.angle || "未写") + "</p>" +
+        '<p class="hint"><b>为什么可能合适</b> ' + esc(topic.why || "未写") + "</p>" +
+        (topic.hook ? '<p class="hint"><b>钩子</b> ' + esc(topic.hook) + "</p>" : "") +
+        '<div class="actions"><button class="btn primary" type="button" data-action="use-topic" data-index="' + index + '" data-copy="1">用这个选题并生成文案</button>' +
+        '<button class="btn" type="button" data-action="use-topic" data-index="' + index + '" data-copy="0">只用这个选题</button></div></article>';
+    }).join("");
+    return note + (label ? '<p class="hint">' + esc(label) + "</p>" : "") + (cards ? '<div class="topics">' + cards + "</div>" : "");
+  }
+  function headline(job) {
+    var source = job.title || String(job.topic || "").split("。")[0];
+    var chars = Array.from(source);
+    return chars.length > 22 ? chars.slice(0, 22).join("") + "…" : source;
   }
   function jobCard(job) {
     var title = job.title || job.topic || "未命名选题";
@@ -515,7 +580,8 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     var job = state.job;
     var locked = job.status === "exported";
     return shell(
-      '<div class="page-head"><input type="hidden" id="job-id" value="' + esc(job.id) + '"><div><a href="#/">← 工作台</a><h1>' + esc(job.title || job.topic) + "</h1>" + stepsHtml(job) + "</div>" +
+      '<div class="page-head"><input type="hidden" id="job-id" value="' + esc(job.id) + '"><div><a href="#/">← 工作台</a><h1>' + esc(headline(job)) + "</h1>" +
+      '<p class="hint">选题：' + esc(job.topic) + "</p>" + stepsHtml(job) + "</div>" +
       '<div class="actions"><span class="pill ' + esc(job.status) + '">' + esc(STATUS[job.status] || job.status) + '</span><button class="btn" type="button" data-action="duplicate">复制为新任务</button></div></div>' +
       '<div class="mobile-tabs"><button type="button" class="btn ' + (state.mobilePane === "edit" ? "on" : "") + '" data-action="pane" data-pane="edit">编辑</button><button type="button" class="btn ' + (state.mobilePane === "preview" ? "on" : "") + '" data-action="pane" data-pane="preview">预览</button></div>' +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") +
@@ -538,13 +604,16 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     var fallbacks = (job.fallbacksOffered || []).length ? '<div class="hint">免费回退：' + esc(job.fallbacksOffered.join("、")) + "</div>" : "";
     var error = "";
     if (state.copyError) {
-      error = '<div class="banner">' + esc(state.copyError.message) + "</div>";
-      if (state.copyError.code === "missing_api_key" || state.copyError.code === "quota_exhausted") {
-        error += '<button class="btn" type="button" data-action="fixture">使用示例文案</button>';
-      }
+      var fallback = state.copyError.code === "missing_api_key" || state.copyError.code === "quota_exhausted"
+        ? '<div class="actions"><button class="btn" type="button" data-action="fixture">使用示例文案</button></div>'
+        : "";
+      error = '<div class="banner">' + esc(state.copyError.message) + fallback + "</div>";
     }
     var model = !job.modelUsed ? "尚未生成文案" : (job.modelUsed === "fixture/local" ? "示例文案 · 未调用模型" : "文案模型 · " + job.modelUsed);
-    return '<section class="card block"><div class="model"><b>' + esc(model) + '</b><span id="saved" class="hint"></span></div>' + fallbacks + error +
+    var next = !locked && !job.title && !job.content
+      ? '<div class="banner">下一步就在这里生成文案。标题不超过 20 字，正文不超过 1000 字，话题 3 到 6 个。导出前需要你自己审核。<div class="actions"><button class="btn primary" type="button" data-action="draft">生成文案</button><button class="btn" type="button" data-action="fixture">使用示例文案</button></div></div>'
+      : "";
+    return '<section class="card block" id="copy-card"><div class="model"><b>' + esc(model) + '</b><span id="saved" class="hint"></span></div>' + next + fallbacks + error +
       '<label class="lbl" for="title">标题 <span id="title-count" class="count">0/20</span></label>' +
       '<input class="field" id="title" maxlength="40" ' + (locked ? "readonly" : "") + ' aria-label="标题">' +
       '<label class="lbl" for="content">正文 <span id="content-count" class="count">0/1000</span></label>' +
@@ -558,7 +627,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
   function imageCard(job, locked) {
     var body = "";
     if (!job.images.length && !(job.imagePrompts || []).length) {
-      body = '<p class="hint">还没有图片。上传你的图，或生成占位图。单张不超过 4MB，一共 1 到 18 张。</p>';
+      body = '<p class="hint">还没有图片。可以上传，也可以按文案里的提示词' + imageButtonLabel() + '。单张不超过 4MB，一共 1 到 18 张。</p>';
     }
     if (!job.images.length && (job.imagePrompts || []).length) {
       body += '<div class="prompts">' + job.imagePrompts.map(function (_, index) {
@@ -569,15 +638,17 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       body += '<div class="shots">' + job.images.map(function (image, index) {
         return '<figure class="shot" data-image-id="' + esc(image.id) + '"><img src="' + esc(image.url) + '" alt="' + esc(image.prompt || "配图") + '">' +
           '<figcaption><input data-prompt-index="' + index + '" aria-label="图 ' + (index + 1) + ' 说明" ' + (locked ? "readonly" : "") + ">" +
-          (locked ? "" : '<div class="shot-actions"><button type="button" class="handle" draggable="true" data-image-id="' + esc(image.id) + '">拖动</button><button type="button" data-action="img-up" data-id="' + esc(image.id) + '">上移</button><button type="button" data-action="img-down" data-id="' + esc(image.id) + '">下移</button><button type="button" data-action="img-del" data-id="' + esc(image.id) + '">删除</button></div>') +
+          (locked ? "" : '<div class="shot-actions"><button type="button" class="handle" draggable="true" data-image-id="' + esc(image.id) + '">拖动</button><button type="button" data-action="img-up" data-id="' + esc(image.id) + '">上移</button><button type="button" data-action="img-down" data-id="' + esc(image.id) + '">下移</button><button type="button" data-action="redraw" data-index="' + (index + 1) + '">重画这张</button><button type="button" data-action="img-del" data-id="' + esc(image.id) + '">删除</button></div>') +
           "</figcaption></figure>";
       }).join("") + "</div>";
     }
-    var confirm = state.confirmReplace ? '<div class="banner">生成占位图会替换当前图片。<button class="btn" type="button" data-action="confirm-mock">确认替换</button></div>' : "";
+    var which = state.redrawIndex ? "会替换第 " + state.redrawIndex + " 张。" : "会替换当前全部图片。";
+    var confirm = state.confirmReplace ? '<div class="banner">' + which + '确认后才会继续。<button class="btn" type="button" data-action="confirm-generate">确认替换</button></div>' : "";
+    var imageHint = state.health && state.health.imageMessage ? state.health.imageMessage : "正在确认出图方式。";
     return '<section class="card block"><div class="row-head"><h2>图片 ' + job.images.length + " / 18</h2>" + (locked ? "" : stepper("imageCount", state.imageCount)) + "</div>" +
-      '<p class="hint">默认是占位图，不调用付费出图，也不用视频模型。你也可以上传自己的图，拖动或用上移下移调整顺序。</p>' +
+      '<p class="hint">' + esc(imageHint) + " 提示词来自文案，可以直接改。上传、拖动和上移下移仍然可用。一次按提示词逐张生成，张数多会更久。</p>" +
       confirm + body +
-      (locked ? "" : '<div class="actions"><label class="btn">上传图片<input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden></label><button class="btn" type="button" data-action="mock">生成占位图</button></div><div class="drop" id="drop">把图片拖到这里</div>') +
+      (locked ? "" : '<div class="actions"><label class="btn">上传图片<input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden></label><button class="btn primary" type="button" data-action="generate">' + esc(imageButtonLabel()) + '</button></div><div class="drop" id="drop">把图片拖到这里</div>') +
     "</section>";
   }
   function reviewCard(job, locked) {
@@ -635,6 +706,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       '<div class="actions"><button class="btn" type="button" data-action="refresh-quota">刷新额度</button><button class="btn" type="button" data-action="refresh-catalog">刷新模型目录</button></div></div>' +
       (state.banner ? '<div class="banner bad">' + esc(state.banner) + "</div>" : "") + message +
       '<div class="meters"><div class="card meter"><span>今日已用</span><b>' + esc(used) + '</b></div><div class="card meter"><span>每日上限</span><b>' + esc(limit) + '</b><div class="bar"><i style="width:' + width + '%"></i></div></div><div class="card meter"><span>今日剩余</span><b>' + esc(remaining) + "</b></div></div>" +
+      '<section class="card block"><h2>出图</h2><p>' + esc(state.health && state.health.imageMessage ? state.health.imageMessage : "还没有读到出图状态。") + "</p></section>" +
       '<section class="card block"><h2>密钥积分剩余</h2><p>' + esc(credit) + '</p><p class="hint">' + esc(quota.quota && quota.quota.capturedAt ? "记录时间 " + when(quota.quota.capturedAt) : "还没有额度记录") + "</p></section>" +
       '<section class="card block"><div class="row-head"><h2>免费文本模型 ' + models.length + '</h2></div><p class="hint">' + esc(routeText) + '</p><input class="search" id="model-query" placeholder="搜索模型" aria-label="搜索模型" value="' + esc(state.modelQuery) + '"><table class="models"><thead><tr><th>模型</th><th>名称</th><th>上下文</th></tr></thead><tbody>' +
       (shown.length ? shown.map(function (model) {
@@ -780,21 +852,92 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     });
   }
 
-  function createTask(event) {
-    event.preventDefault();
+  function createTask(event, withCopy) {
+    if (event) event.preventDefault();
+    if (state.busy) return;
     var topic = document.getElementById("topic");
-    var value = topic ? topic.value.trim() : "";
+    var value = topic ? topic.value.trim() : state.composerTopic.trim();
     state.composerTopic = value;
     if (!value) { state.banner = "请先写一个选题"; render(); return; }
+    openDraft(value, withCopy !== false);
+  }
+  function currentBrief() {
+    return {
+      niche: state.brief.niche.trim(),
+      audience: state.brief.audience.trim(),
+      keywords: state.brief.keywords.trim(),
+      idea: state.brief.idea.trim()
+    };
+  }
+  function suggestTopics(fixture) {
+    var brief = currentBrief();
+    if (!brief.niche && !brief.audience && !brief.keywords && !brief.idea) {
+      state.topicNote = "请先写领域、受众、关键词，或一个粗略想法";
+      state.topics = [];
+      render();
+      return;
+    }
     setBusy(true);
-    api("/jobs", { method: "POST", json: { topic: value } }).then(function (data) {
+    api("/topics", { method: "POST", json: Object.assign({ count: 6, fixture: !!fixture }, brief) }).then(function (data) {
+      state.topics = data.topics || [];
+      state.topicsFixture = !!data.fixture;
+      state.topicsModel = data.modelUsed && data.modelUsed !== "fixture/local" ? data.modelUsed : "";
+      state.topicNote = data.fixture
+        ? "这些是示例选题，没有调用模型，也不是小红书热榜。选一个之后可以生成文案。"
+        : "选一个选题，然后生成文案。生成文案会再使用 1 次免费模型额度。";
+      state.banner = "";
+      return api("/quota").then(function (quota) { state.quota = quota; }, function () { return null; });
+    }).catch(function (err) {
+      state.topics = [];
+      state.topicsFixture = false;
+      state.topicsModel = "";
+      state.topicNote = err.message;
+    }).finally(function () { setBusy(false); render(); });
+  }
+  function chosenTopic(index) {
+    var card = state.topics[index];
+    if (!card) return "";
+    var input = document.querySelector('[data-topic-index="' + index + '"]');
+    var title = input && input.value.trim() ? input.value.trim() : card.title;
+    var topic = title;
+    if (card.angle) topic += "。角度：" + card.angle;
+    if (card.hook) topic += "。钩子：" + card.hook;
+    return Array.from(topic).slice(0, 240).join("");
+  }
+  function useTopic(index, withCopy) {
+    var topic = chosenTopic(index);
+    if (!topic) return;
+    openDraft(topic, withCopy);
+  }
+  function openDraft(topic, withCopy) {
+    setBusy(true);
+    api("/jobs", { method: "POST", json: { topic: topic } }).then(function (data) {
       sessionStorage.setItem("wowacool-count", String(state.composerCount));
-      state.composerTopic = "";
-      location.hash = "#/jobs/" + data.job.id;
+      if (!withCopy) {
+        location.hash = "#/jobs/" + data.job.id;
+        return null;
+      }
+      return api("/jobs/" + data.job.id + "/draft", { method: "POST", json: { imageCount: state.composerCount } }).then(function () {
+        sessionStorage.setItem("wowacool-drafted", "1");
+        location.hash = "#/jobs/" + data.job.id;
+      }).catch(function (err) {
+        sessionStorage.setItem("wowacool-copy-error", JSON.stringify({ message: err.message, code: err.code || "" }));
+        location.hash = "#/jobs/" + data.job.id;
+      });
     }).catch(function (err) {
       state.banner = err.message;
       render();
     }).finally(function () { setBusy(false); });
+  }
+  function takeCopyHandoff() {
+    var drafted = sessionStorage.getItem("wowacool-drafted");
+    sessionStorage.removeItem("wowacool-drafted");
+    var raw = sessionStorage.getItem("wowacool-copy-error");
+    sessionStorage.removeItem("wowacool-copy-error");
+    if (raw) {
+      try { state.copyError = JSON.parse(raw); } catch (e) { state.copyError = { message: raw, code: "" }; }
+    }
+    if (drafted === "1") setTimeout(function () { toast("文案已生成，请先看一遍再出图"); }, 30);
   }
   function unlock(event) {
     event.preventDefault();
@@ -825,15 +968,26 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
       render();
     }).finally(function () { setBusy(false); });
   }
-  function runMock(replace) {
+  function runImages(options) {
+    options = options || {};
     if (!state.job) return;
-    if (state.job.images.length && !replace) { state.confirmReplace = true; render(); return; }
+    var index = options.index || 0;
+    if ((index || state.job.images.length) && !options.replace) {
+      state.redrawIndex = index;
+      state.confirmReplace = true;
+      render();
+      return;
+    }
     setBusy(true);
+    var body = { count: state.imageCount, replace: !!options.replace };
+    if (index) body.index = index;
     Promise.resolve(saveFields(true)).catch(function () { return null; }).then(function () {
-      return api("/jobs/" + state.job.id + "/images", { method: "POST", json: { count: state.imageCount, replace: !!replace } });
+      return api("/jobs/" + state.job.id + "/images", { method: "POST", json: body });
     }).then(function (data) {
       state.job = data.job;
       state.confirmReplace = false;
+      state.redrawIndex = 0;
+      if (data.image) state.health = Object.assign({}, state.health || {}, data.image, { imageProvider: data.image.provider, imageMessage: data.image.message, imageReady: data.image.ready, imageModel: data.image.model });
       toast(data.provider === "mock" ? "已生成占位图" : "图片已生成");
       render({ fresh: true });
     }).catch(function (err) {
@@ -939,8 +1093,13 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (action === "pane") { state.mobilePane = btn.getAttribute("data-pane"); render(); }
     if (action === "draft") runDraft(false);
     if (action === "fixture") runDraft(true);
-    if (action === "mock") runMock(false);
-    if (action === "confirm-mock") runMock(true);
+    if (action === "suggest") suggestTopics(false);
+    if (action === "suggest-fixture") suggestTopics(true);
+    if (action === "use-topic") useTopic(Number(btn.getAttribute("data-index")), btn.getAttribute("data-copy") === "1");
+    if (action === "create-only") createTask(null, false);
+    if (action === "generate") { state.redrawIndex = 0; runImages({ replace: false }); }
+    if (action === "confirm-generate") runImages({ replace: true, index: state.redrawIndex || 0 });
+    if (action === "redraw") { state.redrawIndex = Number(btn.getAttribute("data-index")); state.confirmReplace = true; render(); }
     if (action === "img-up") moveImage(btn.getAttribute("data-id"), -1);
     if (action === "img-down") moveImage(btn.getAttribute("data-id"), 1);
     if (action === "img-del") {
@@ -977,7 +1136,7 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     }
   });
   document.addEventListener("submit", function (event) {
-    if (event.target && event.target.id === "composer") createTask(event);
+    if (event.target && event.target.id === "composer") createTask(event, true);
     if (event.target && event.target.id === "unlock") unlock(event);
   });
   document.addEventListener("input", function (event) {
@@ -987,6 +1146,11 @@ pre.payload { white-space: pre-wrap; word-break: break-word; background: #1c1614
     if (target.id === "content") { clampField(target, 1000); updatePreview(); scheduleSave(); }
     if (target.id === "review-note") state.reviewNote = target.value;
     if (target.id === "topic") state.composerTopic = target.value;
+    if (target.id === "niche" || target.id === "audience" || target.id === "keywords" || target.id === "idea") state.brief[target.id] = target.value;
+    if (target.hasAttribute("data-topic-index")) {
+      var topicIndex = Number(target.getAttribute("data-topic-index"));
+      if (state.topics[topicIndex]) state.topics[topicIndex].title = target.value;
+    }
     if (target.id === "model-query") { state.modelQuery = target.value; render(); var again = document.getElementById("model-query"); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }
     if (target.hasAttribute("data-prompt-index")) scheduleSave();
   });

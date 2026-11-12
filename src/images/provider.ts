@@ -8,7 +8,7 @@ export interface ImageSpec {
 export interface GeneratedImage {
   index: number;
   prompt: string;
-  mimeType: "image/png";
+  mimeType: "image/png" | "image/jpeg";
   filename: string;
   bytes: Buffer;
   provider: string;

@@ -33,7 +33,7 @@ wowacool（小红书图文工作台，一期本地 CLI）
 
 说明：
   - 文案默认走 OpenRouter 免费模型；--skip-llm 使用本地fixture，不消耗额度
-  - 出图默认 mock 占位图，不走 Grok Bot 额度
+  - 本地 CLI 出图默认 mock 占位图。线上工作台用 Workers AI，不走 Grok 出图额度
   - 未人工批准（或 --approve）不得导出可发布素材包
 `.trim();
 }

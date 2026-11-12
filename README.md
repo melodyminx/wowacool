@@ -1,6 +1,6 @@
 # wowacool
 
-小红书图文工作台（一期）。本地可跑的执行通道：选题 → 出图（默认 mock）+ 标题 / 正文 / 话题 → 人工审核 → 导出可发布素材包。
+小红书图文工作台。选题推荐 → 文案 → 竖版出图 → 人工审核 → 导出可发布素材包。线上默认用 Cloudflare Workers AI 出图；本地 CLI 仍用占位图。
 
 总管是「自动视频工作流」；本仓库只做小红书图文，暂不做视频、抖音、视频号。官方 `write_notes` 仍在规划中，本期只导出素材包，并约定如何唤起官方发布页 `xhs.postNote`，由用户自己点发布。不抓取浏览器登录态，不代发。
 
@@ -48,16 +48,16 @@ npm run cli -- run --topic "桌面整理小巧思" --images 3 --skip-llm --appro
 
 ## 架构要点
 
-- 文案只走 OpenRouter 免费文本模型，带官方 `models` 回退与本地 429 / 不可用切换；回退链禁止出现付费模型。
-- 出图走 Provider 接口，默认 mock，不调用 Grok 出图接口。真实文生图密钥尚未提供。Seedance 是视频模型，不是一期出图引擎。
-- 审核门禁强制：未批准不得导出。
-- Cloudflare Worker `wowacool` 在 `/` 提供运营工作台，在 `/health` 提供健康检查。任务步骤在请求内完成，不依赖队列。本地 CLI 数据仍在 `data/`。
+- 选题和文案只走 OpenRouter 免费文本模型，带官方 `models` 回退与本地 429 / 不可用切换；回退链禁止出现付费模型，`models` 最多 3 条。
+- 工作台出图走 Workers AI 绑定（`@cf/black-forest-labs/flux-2-klein-4b`，请求 768×1024）。`IMAGE_PROVIDER=mock` 才是占位图。不调用 Grok 出图，也不把 Seedance 当文生图。
+- 审核门禁强制：未批准不得导出。视频生成和视频发布不做。
+- Cloudflare Worker `wowacool` 在 `/` 提供运营工作台，在 `/health` 说明当前出图方式。任务步骤在请求内完成，不依赖队列。本地 CLI 数据仍在 `data/`。
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/CONSTRAINTS.md](docs/CONSTRAINTS.md)、[docs/INTERFACES.md](docs/INTERFACES.md)、[docs/POSTNOTE.md](docs/POSTNOTE.md)。
 
 ## 部署到 Cloudflare
 
-Worker 入口是 `src/cloudflare/worker.ts`，配置在 `wrangler.toml`。`GET /` 是运营页，`GET /health` 是 JSON。D1 `wowacool` 与 R2 `wowacool-assets` 已绑定。配置里没有账号 ID 或 API token。队列保持注释，任务步骤在请求内完成。
+Worker 入口是 `src/cloudflare/worker.ts`，配置在 `wrangler.toml`。`GET /` 是运营页，`GET /health` 是 JSON，并写明当前出图 Provider。D1 `wowacool`、R2 `wowacool-assets` 和 Workers AI 绑定 `AI` 都在配置里。没有账号 ID 或 API token。队列保持注释，任务步骤在请求内完成。
 
 `schema/d1.sql` 已经应用到现有数据库，这次没有新增表或列，部署前不需要再执行 SQL。
 
@@ -87,8 +87,8 @@ npx wrangler secret put OPENROUTER_API_KEY
 npx wrangler secret put APP_ACCESS_TOKEN
 ```
 
-未配置 `OPENROUTER_API_KEY` 或免费额度用尽时，页面会说明原因，并可以改用示例文案把配图、审核和导出走完。不会改用付费模型。出图默认仍是 mock，也可以上传自己的图片。导出的是素材包和官方 `xhs.postNote` 参数，不会发布到小红书。
+未配置 `OPENROUTER_API_KEY` 或免费额度用尽时，页面会说明原因，并可以改用示例选题和示例文案把配图、审核和导出走完。不会改用付费模型。出图使用同一个 Cloudflare 账号上的 Workers AI，不需要新的供应商密钥；要退回占位图，把 `IMAGE_PROVIDER` 设为 `mock`。也可以上传自己的图片。导出的是素材包和官方 `xhs.postNote` 参数，不会发布到小红书。
 
 ## 缺口
 
-文生图接口未提供；`write_notes` 仍规划中。D1 与 R2 已绑定，队列仍不使用。完整清单见 [docs/GAPS.md](docs/GAPS.md)。
+`write_notes` 仍规划中。视频生成和视频发布不做。D1、R2 和 Workers AI 已绑定，队列仍不使用。完整清单见 [docs/GAPS.md](docs/GAPS.md)。

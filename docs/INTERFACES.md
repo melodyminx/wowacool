@@ -40,16 +40,21 @@ interface ImageProvider {
 环境变量：
 
 ```
-IMAGE_PROVIDER=mock
-# 未来：
-IMAGE_PROVIDER=openai_compatible
-IMAGE_GEN_BASE_URL=
-IMAGE_GEN_API_KEY=
-IMAGE_GEN_MODEL=
-IMAGE_GEN_PATH=/images/generations
+IMAGE_PROVIDER=workers_ai
+WORKERS_AI_IMAGE_MODEL=@cf/black-forest-labs/flux-2-klein-4b
+# 显式占位图：
+# IMAGE_PROVIDER=mock
+# 可选，配齐后才发请求：
+# IMAGE_PROVIDER=openai_compatible
+# IMAGE_GEN_BASE_URL=
+# IMAGE_GEN_API_KEY=
+# IMAGE_GEN_MODEL=
+# IMAGE_GEN_PATH=/images/generations
 ```
 
-约定未来走 OpenAI 兼容的 `POST {IMAGE_GEN_BASE_URL}{IMAGE_GEN_PATH}`，请求体至少包含 `model`、`prompt`、`size`。在用户给出已验证的调用方式前，该 Provider 只报错、不发请求。禁止把 Seedance 或 Grok Bot 接进这个接口。
+Workers AI 走 Worker 里的 `AI` 绑定，不在浏览器里调用。FLUX.2 [klein] 4B 用 multipart 传入 `prompt`、`width=768`、`height=1024`。FLUX.1 schnell 只有 `prompt` 和 `steps`，若改用它，返回的方图会居中裁成 3:4。
+
+OpenAI 兼容接口为 `POST {IMAGE_GEN_BASE_URL}{IMAGE_GEN_PATH}`，请求体包含 `model`、`prompt`、`size=768x1024`、`response_format=b64_json`。地址或模型名像 Seedance、Grok、xAI 时直接拒绝，不发请求。
 
 ## 本地任务 JSON
 
@@ -81,12 +86,13 @@ data/exports/<jobId>/
 | GET /quota | 查询额度；未配置密钥时返回说明，不报 500 |
 | POST /catalog/refresh | 刷新免费文本模型目录 |
 | GET /catalog | 查看已缓存的免费文本模型与当前路由 |
-| POST /jobs | 创建任务 |
+| POST /topics | 推荐选题。`{ niche?, audience?, keywords?, idea?, count? }`。`{ "fixture": true }` 返回示例选题，不调用模型 |
+| POST /jobs | 创建任务。选题可以带角度和钩子，最长 240 字 |
 | GET /jobs | 任务列表 |
 | GET /jobs/:id | 任务详情 |
 | PATCH /jobs/:id | 修改标题、正文、话题、出图提示词 |
 | POST /jobs/:id/draft | 生成文案。`{ "fixture": true }` 使用示例文案，不调用模型 |
-| POST /jobs/:id/images | 按现有 Provider 出图，默认 mock。已有图片时需 `{ "replace": true }` |
+| POST /jobs/:id/images | 按当前 Provider 出图。已有图片时需 `{ "replace": true }`。`{ "index": 2, "replace": true }` 只重画第 2 张 |
 | POST /jobs/:id/images/upload | 上传 PNG / JPEG / WEBP / GIF |
 | POST /jobs/:id/images/reorder | 调整图片顺序 |
 | DELETE /jobs/:id/images/:assetId | 删除一张图 |

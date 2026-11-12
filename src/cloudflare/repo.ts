@@ -4,6 +4,15 @@ import { countChars } from "../util/text.js";
 import { newId, nowIso } from "../util/id.js";
 import { HttpError } from "./http.js";
 
+export type ImageSource = "mock" | "upload" | "workers_ai" | "openai_compatible";
+
+const IMAGE_KINDS: readonly ImageSource[] = ["mock", "upload", "workers_ai", "openai_compatible"];
+const IMAGE_KIND_SQL = `kind IN (${IMAGE_KINDS.map((kind) => `'${kind}'`).join(", ")})`;
+
+export function isImageSource(kind: string): kind is ImageSource {
+  return (IMAGE_KINDS as readonly string[]).includes(kind);
+}
+
 export interface StoredImage {
   id: string;
   filename: string;
@@ -11,7 +20,7 @@ export interface StoredImage {
   prompt: string;
   mimeType: string;
   url: string;
-  source: "mock" | "upload";
+  source: ImageSource;
   sortOrder: number;
   r2Key: string;
 }
@@ -143,7 +152,7 @@ export async function listJobs(db: D1Database): Promise<JobSummary[]> {
       `SELECT j.id, j.topic, j.status, j.title, j.content, j.image_count, j.model_used, j.created_at, j.updated_at,
         (
           SELECT a.id FROM assets a
-          WHERE a.job_id = j.id AND a.kind IN ('mock', 'upload')
+          WHERE a.job_id = j.id AND a.${IMAGE_KIND_SQL}
           ORDER BY a.sort_order ASC, a.created_at ASC
           LIMIT 1
         ) AS cover_id
@@ -197,7 +206,7 @@ export async function getImageAsset(db: D1Database, jobId: string, assetId: stri
   return db
     .prepare(
       `SELECT id, job_id, kind, filename, r2_key, url, prompt, sort_order, created_at
-       FROM assets WHERE id = ? AND job_id = ? AND kind IN ('mock', 'upload')`,
+       FROM assets WHERE id = ? AND job_id = ? AND ${IMAGE_KIND_SQL}`,
     )
     .bind(assetId, jobId)
     .first<AssetRow>();
@@ -265,7 +274,7 @@ export interface IncomingImage {
   prompt: string;
   bytes: Uint8Array;
   mimeType: string;
-  source: "mock" | "upload";
+  source: ImageSource;
 }
 
 export async function replaceImages(db: D1Database, bucket: R2Bucket, job: StoredJob, images: IncomingImage[]): Promise<void> {
@@ -273,7 +282,7 @@ export async function replaceImages(db: D1Database, bucket: R2Bucket, job: Store
   const status = decideStatus(job.status, isPackageComplete(job.title, job.content, images.length));
   const stored = await putImages(bucket, job.id, images);
   const statements: D1PreparedStatement[] = [
-    db.prepare(`DELETE FROM assets WHERE job_id = ? AND kind IN ('mock', 'upload')`).bind(job.id),
+    db.prepare(`DELETE FROM assets WHERE job_id = ? AND ${IMAGE_KIND_SQL}`).bind(job.id),
     db.prepare(`DELETE FROM assets WHERE job_id = ? AND kind = 'prompt'`).bind(job.id),
   ];
   stored.forEach((image, index) => {
@@ -288,6 +297,34 @@ export async function replaceImages(db: D1Database, bucket: R2Bucket, job: Store
   statements.push(auditStmt(db, job.id, "images_generated", { count: stored.length }, now));
   await db.batch(statements);
   await deleteKeys(bucket, job.images.map((image) => image.r2Key));
+}
+
+export async function swapImage(
+  db: D1Database,
+  bucket: R2Bucket,
+  job: StoredJob,
+  assetId: string,
+  image: IncomingImage,
+): Promise<void> {
+  const current = job.images.find((item) => item.id === assetId);
+  if (!current) throw new HttpError(404, "找不到这张图片", "not_found");
+  const now = nowIso();
+  const status = decideStatus(job.status, isPackageComplete(job.title, job.content, job.images.length));
+  const taken = filenamesOf(job);
+  taken.delete(current.filename);
+  const stored = await putImages(bucket, job.id, [image], taken);
+  const next = stored[0];
+  if (!next) throw new HttpError(500, "图片没有写入", "image_failed");
+  await db.batch([
+    db.prepare(`DELETE FROM assets WHERE id = ? AND job_id = ?`).bind(assetId, job.id),
+    imageStmt(db, job.id, next, current.sortOrder, now),
+    db
+      .prepare(`UPDATE assets SET prompt = ? WHERE job_id = ? AND kind = 'prompt' AND sort_order = ?`)
+      .bind(image.prompt, job.id, current.sortOrder),
+    db.prepare(`UPDATE jobs SET status = ?, review_note = NULL, updated_at = ? WHERE id = ?`).bind(status, now, job.id),
+    auditStmt(db, job.id, "image_regenerated", { assetId, index: current.sortOrder }, now),
+  ]);
+  if (current.r2Key) await bucket.delete(current.r2Key);
 }
 
 export async function addImages(db: D1Database, bucket: R2Bucket, job: StoredJob, images: IncomingImage[]): Promise<void> {
@@ -539,7 +576,7 @@ async function mustGet(db: D1Database, id: string): Promise<StoredJob> {
 
 function hydrate(row: JobRow, assets: AssetRow[], audits: AuditRow[]): StoredJob {
   const prompts = assets.filter((asset) => asset.kind === "prompt");
-  const images = assets.filter((asset) => asset.kind === "mock" || asset.kind === "upload");
+  const images = assets.filter((asset) => isImageSource(asset.kind));
   const copyAudit = audits.find((audit) => audit.event === "copy_generated");
   const reviewAudit = audits.find((audit) => audit.event === "review_approved" || audit.event === "review_rejected");
   let fallbacks: string[] = [];
@@ -576,7 +613,7 @@ function hydrate(row: JobRow, assets: AssetRow[], audits: AuditRow[]): StoredJob
       prompt: asset.prompt ?? "",
       mimeType: mimeFromFilename(asset.filename),
       url: `/jobs/${row.id}/images/${asset.id}`,
-      source: asset.kind === "upload" ? "upload" : "mock",
+      source: isImageSource(asset.kind) ? asset.kind : "mock",
       sortOrder: Number(asset.sort_order ?? 0),
       r2Key: asset.r2_key ?? "",
     })),
@@ -603,7 +640,7 @@ function promptStmt(db: D1Database, jobId: string, prompt: string, index: number
 function imageStmt(
   db: D1Database,
   jobId: string,
-  image: { id: string; filename: string; key: string; prompt: string; source: "mock" | "upload" },
+  image: { id: string; filename: string; key: string; prompt: string; source: ImageSource },
   index: number,
   now: string,
 ): D1PreparedStatement {
